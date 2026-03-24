@@ -2,8 +2,6 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import Swal from 'sweetalert2'
 import {
-  createUserWithEmailAndPassword,
-  fetchSignInMethodsForEmail,
   onAuthStateChanged,
   signInWithEmailAndPassword,
   signOut,
@@ -98,9 +96,8 @@ const mockTransactions: Transaction[] = [
 ]
 
 const TRANSACTIONS_STORAGE_KEY = 'miromoney.transactions'
-const DEFAULT_ADMIN_USER = 'miromoney@gmail.com'
-const DEFAULT_ADMIN_PASS = 'miromoney123'
-const DEFAULT_ADMIN_EMAIL = 'miromoney@gmail.com'
+const DEFAULT_ADMIN_EMAIL = import.meta.env.VITE_DEFAULT_LOGIN_EMAIL ?? 'miromoney@gmail.com'
+const DEFAULT_ADMIN_PASS = import.meta.env.VITE_DEFAULT_LOGIN_PASSWORD ?? 'miromoney123'
 
 const CATEGORY_OPTIONS: Record<TransactionKind, string[]> = {
   income: ['Freelance', 'Salario', 'Educación', 'Inversiones', 'Otros ingresos'],
@@ -325,30 +322,6 @@ const App = () => {
     window.localStorage.setItem(TRANSACTIONS_STORAGE_KEY, JSON.stringify(transactions))
   }, [transactions])
 
-  const ensureDefaultAdminAuth = async () => {
-    if (!isFirebaseConfigured || !auth) {
-      return
-    }
-
-    const methods = await fetchSignInMethodsForEmail(auth, DEFAULT_ADMIN_EMAIL)
-    if (methods.includes('password')) {
-      return
-    }
-
-    try {
-      await createUserWithEmailAndPassword(auth, DEFAULT_ADMIN_EMAIL, DEFAULT_ADMIN_PASS)
-      await signOut(auth)
-      return
-    } catch (error) {
-      const code = (error as { code?: string }).code
-      if (code === 'auth/email-already-in-use') {
-        return
-      }
-
-      throw error
-    }
-  }
-
   useEffect(() => {
     if (!isFirebaseConfigured || !auth) {
       setIsAuthBootstrapping(false)
@@ -484,10 +457,10 @@ const App = () => {
       return
     }
 
-    if (loginForm.user.trim() !== DEFAULT_ADMIN_USER) {
+    if (loginForm.user.trim().toLowerCase() !== DEFAULT_ADMIN_EMAIL.toLowerCase()) {
       void Swal.fire({
         title: 'Usuario no valido',
-        text: 'Usa el usuario miromoney@gmail.com.',
+        text: `Usa el usuario ${DEFAULT_ADMIN_EMAIL}.`,
         icon: 'error',
         confirmButtonColor: '#946df8',
       })
@@ -496,10 +469,6 @@ const App = () => {
 
     setIsAuthLoading(true)
     try {
-      if (loginForm.pass === DEFAULT_ADMIN_PASS) {
-        await ensureDefaultAdminAuth()
-      }
-
       await signInWithEmailAndPassword(auth, DEFAULT_ADMIN_EMAIL, loginForm.pass)
     } catch (error) {
       const code = (error as { code?: string }).code
@@ -720,7 +689,9 @@ const App = () => {
             </button>
           </form>
 
-          <p className="login-note">Credenciales por defecto: usuario miromoney@gmail.com, clave miromoney123</p>
+          <p className="login-note">
+            Credenciales por defecto: usuario {DEFAULT_ADMIN_EMAIL}, clave {DEFAULT_ADMIN_PASS}
+          </p>
         </section>
       </main>
     )
