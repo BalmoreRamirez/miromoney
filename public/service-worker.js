@@ -1,4 +1,4 @@
-const CACHE_NAME = 'miromoney-v1'
+const CACHE_NAME = 'miromoney-v2'
 const URLS_TO_CACHE = [
   '/',
   '/index.html',
@@ -32,17 +32,21 @@ self.addEventListener('fetch', event => {
   const { request } = event
   const url = new URL(request.url)
 
-  // Solo cachear GET requests con esquema http/https
-  if (request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
-    event.respondWith(fetch(request).catch(() => new Response('Offline', { status: 503 })))
+  // Sólo manejamos peticiones GET http/https y del mismo origen
+  if (
+    request.method !== 'GET' ||
+    (url.protocol !== 'http:' && url.protocol !== 'https:') ||
+    url.origin !== self.location.origin
+  ) {
     return
   }
 
-  // Network only para APIs externas (Firebase, Google)
-  if (request.url.includes('firebaseio.com') || request.url.includes('googleapis.com')) {
-    event.respondWith(
-      fetch(request).catch(() => new Response('Offline - No hay conexión disponible', { status: 503 }))
-    )
+  // Dejar pasar todo lo que sea Firebase/Google sin tocar (evita loops en channel requests)
+  if (
+    request.url.includes('firebaseio.com') ||
+    request.url.includes('googleapis.com') ||
+    request.url.includes('gstatic.com')
+  ) {
     return
   }
 
