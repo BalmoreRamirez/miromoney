@@ -38,12 +38,12 @@ const toDateInput = (date: Date) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
   return local.toISOString().slice(0, 10)
 }
-
+/**
 const minusDays = (days: number) => {
   const value = new Date(today)
   value.setDate(value.getDate() - days)
   return toDateInput(value)
-}
+}**/
 
 const mockTransactions: Transaction[] = [
 ]
