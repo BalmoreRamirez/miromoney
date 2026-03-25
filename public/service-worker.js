@@ -27,49 +27,39 @@ self.addEventListener('activate', event => {
   )
 })
 
-// Fetch: usar cache-first strategy para assets, network-first para datos
+// Fetch: usar cache-first strategy para assets, network-only para APIs
 self.addEventListener('fetch', event => {
   const { request } = event
-  
-  // Network first para APIs (Firebase)
+  const url = new URL(request.url)
+
+  // Solo cachear GET requests con esquema http/https
+  if (request.method !== 'GET' || (url.protocol !== 'http:' && url.protocol !== 'https:')) {
+    event.respondWith(fetch(request).catch(() => new Response('Offline', { status: 503 })))
+    return
+  }
+
+  // Network only para APIs externas (Firebase, Google)
   if (request.url.includes('firebaseio.com') || request.url.includes('googleapis.com')) {
     event.respondWith(
-      fetch(request)
-        .then(response => {
-          if (!response || response.status !== 200) {
-            return response
-          }
-          const responseClone = response.clone()
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(request, responseClone)
-          })
-          return response
-        })
-        .catch(() => caches.match(request))
+      fetch(request).catch(() => new Response('Offline - No hay conexión disponible', { status: 503 }))
     )
     return
   }
 
   // Cache first para assets estáticos (JS, CSS, imágenes)
-  if (request.method === 'GET') {
-    event.respondWith(
-      caches.match(request)
-        .then(response => response || fetch(request))
-        .then(response => {
-          if (!response || response.status !== 200 || response.type === 'error') {
-            return response
-          }
-          const responseClone = response.clone()
-          caches.open(CACHE_NAME).then(cache => {
-            cache.put(request, responseClone)
-          })
+  event.respondWith(
+    caches.match(request)
+      .then(response => response || fetch(request))
+      .then(response => {
+        if (!response || response.status !== 200 || response.type === 'error') {
           return response
+        }
+        const responseClone = response.clone()
+        caches.open(CACHE_NAME).then(cache => {
+          cache.put(request, responseClone)
         })
-        .catch(() => new Response('Offline - Sin conexión disponible', { status: 503 }))
-    )
-    return
-  }
-
-  // Para POST, PUT, DELETE: network only
-  event.respondWith(fetch(request))
+        return response
+      })
+      .catch(() => new Response('Offline - Sin conexión disponible', { status: 503 }))
+  )
 })
