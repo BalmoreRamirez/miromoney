@@ -376,81 +376,116 @@ const App = () => {
     const database = db
 
     let isMounted = true
+    let syncTimeout: ReturnType<typeof setTimeout> | null = null
+
+    const cleanup = () => {
+      if (syncTimeout) {
+        clearTimeout(syncTimeout)
+      }
+      if (isMounted) {
+        setIsSyncingCloud(false)
+      }
+    }
 
     const loadCloudTransactions = async () => {
       setIsSyncingCloud(true)
+      console.log('[MiroMoney] Iniciando sincronización...')
+      
       try {
-        const transactionsCollection = collection(database, 'transactions')
-        const snapshot = await getDocs(transactionsCollection)
+        // Timeout de 10 segundos máximo para sincronizar
+        const syncPromise = new Promise<Transaction[]>((resolve, reject) => {
+          syncTimeout = setTimeout(() => {
+            reject(new Error('Timeout: La sincronización tardó más de 10 segundos'))
+          }, 10000)
 
-        if (snapshot.empty) {
-          const seedSource = transactions.length > 0 ? transactions : mockTransactions
+          // Ejecutar la sincronización
+          ;(async () => {
+            try {
+              const transactionsCollection = collection(database, 'transactions')
+              const snapshot = await getDocs(transactionsCollection)
 
-          if (seedSource.length > 0) {
-            const createdRefs = await Promise.all(
-              seedSource.map((item) =>
-                addDoc(transactionsCollection, {
-                  kind: item.kind,
-                  concept: item.concept,
-                  category: item.category,
-                  amount: item.amount,
-                  date: item.date,
-                }),
-              ),
-            )
+              if (syncTimeout) {
+                clearTimeout(syncTimeout)
+                syncTimeout = null
+              }
 
-            const seededTransactions: Transaction[] = createdRefs
-              .map((ref, index) => ({
-                id: ref.id,
-                kind: seedSource[index].kind,
-                concept: seedSource[index].concept,
-                category: seedSource[index].category,
-                amount: seedSource[index].amount,
-                date: seedSource[index].date,
-              }))
-              .sort((a, b) => b.date.localeCompare(a.date))
+              if (snapshot.empty) {
+                console.log('[MiroMoney] Colección vacía, sembrando con datos locales...')
+                const seedSource = transactions.length > 0 ? transactions : mockTransactions
 
-            if (isMounted) {
-              setTransactions(seededTransactions)
+                if (seedSource.length > 0) {
+                  const createdRefs = await Promise.all(
+                    seedSource.map((item) =>
+                      addDoc(transactionsCollection, {
+                        kind: item.kind,
+                        concept: item.concept,
+                        category: item.category,
+                        amount: item.amount,
+                        date: item.date,
+                      }),
+                    ),
+                  )
+
+                  const seededTransactions: Transaction[] = createdRefs
+                    .map((ref, index) => ({
+                      id: ref.id,
+                      kind: seedSource[index].kind,
+                      concept: seedSource[index].concept,
+                      category: seedSource[index].category,
+                      amount: seedSource[index].amount,
+                      date: seedSource[index].date,
+                    }))
+                    .sort((a, b) => b.date.localeCompare(a.date))
+
+                  resolve(seededTransactions)
+                  return
+                }
+              }
+
+              const cloudTransactions: Transaction[] = snapshot.docs
+                .map((record) => {
+                  const data = record.data()
+
+                  if (
+                    (data.kind !== 'income' && data.kind !== 'expense') ||
+                    typeof data.concept !== 'string' ||
+                    typeof data.category !== 'string' ||
+                    typeof data.amount !== 'number' ||
+                    typeof data.date !== 'string'
+                  ) {
+                    return null
+                  }
+
+                  return {
+                    id: record.id,
+                    kind: data.kind,
+                    concept: data.concept,
+                    category: data.category,
+                    amount: data.amount,
+                    date: data.date,
+                  }
+                })
+                .filter((item): item is Transaction => item !== null)
+                .sort((a, b) => b.date.localeCompare(a.date))
+
+              console.log(`[MiroMoney] Sincronización OK: ${cloudTransactions.length} movimientos`)
+              resolve(cloudTransactions)
+            } catch (err) {
+              if (syncTimeout) {
+                clearTimeout(syncTimeout)
+                syncTimeout = null
+              }
+              reject(err)
             }
+          })()
+        })
 
-            if (!isMounted) {
-              return
-            }
-          }
-        }
-
-        const cloudTransactions: Transaction[] = snapshot.docs
-          .map((record) => {
-            const data = record.data()
-
-            if (
-              (data.kind !== 'income' && data.kind !== 'expense') ||
-              typeof data.concept !== 'string' ||
-              typeof data.category !== 'string' ||
-              typeof data.amount !== 'number' ||
-              typeof data.date !== 'string'
-            ) {
-              return null
-            }
-
-            return {
-              id: record.id,
-              kind: data.kind,
-              concept: data.concept,
-              category: data.category,
-              amount: data.amount,
-              date: data.date,
-            }
-          })
-          .filter((item): item is Transaction => item !== null)
-          .sort((a, b) => b.date.localeCompare(a.date))
-
+        const cloudTransactions = await syncPromise
         if (isMounted) {
           setTransactions(cloudTransactions)
         }
       } catch (error) {
-        console.error('Error sincronizando Firebase:', error)
+        console.error('[MiroMoney] Error sincronizando Firebase:', error)
         const errorMsg = error instanceof Error ? error.message : String(error)
         if (isMounted) {
           void Swal.fire({
@@ -461,9 +496,7 @@ const App = () => {
           })
         }
       } finally {
-        if (isMounted) {
-          setIsSyncingCloud(false)
-        }
+        cleanup()
       }
     }
 
@@ -471,6 +504,9 @@ const App = () => {
 
     return () => {
       isMounted = false
+      if (syncTimeout) {
+        clearTimeout(syncTimeout)
+      }
     }
   }, [isAuthenticated])
 
