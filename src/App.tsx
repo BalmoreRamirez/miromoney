@@ -1102,7 +1102,7 @@ const App = () => {
             <h3>Resumen de la semana</h3>
             <p>Estado actual: <strong>{currentWeekReport.health}</strong></p>
             <p className="cloud-status">
-              Firebase: {isFirebaseConfigured ? (isSyncingCloud ? 'sincronizando...' : 'conectado') : 'no configurado'}
+              Aplicación: {isFirebaseConfigured ? (isSyncingCloud ? 'sincronizando...' : 'conectado') : 'no configurado'}
             </p>
 
             <article className="mini-stat">
