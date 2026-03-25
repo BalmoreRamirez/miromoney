@@ -18,7 +18,7 @@ import {
   Wallet,
   X,
 } from 'lucide-react'
-import { auth, db, isFirebaseConfigured } from './lib/firebase'
+import { auth, db, isFirebaseConfigured, missingFirebaseEnvKeys } from './lib/firebase'
 
 type TransactionKind = 'income' | 'expense'
 
@@ -450,7 +450,10 @@ const App = () => {
     if (!isFirebaseConfigured || !auth) {
       void Swal.fire({
         title: 'Firebase no configurado',
-        text: 'Configura las variables de entorno para usar autenticacion Firebase.',
+        text:
+          missingFirebaseEnvKeys.length > 0
+            ? `Faltan variables: ${missingFirebaseEnvKeys.join(', ')}`
+            : 'Configura las variables de entorno para usar autenticacion Firebase.',
         icon: 'warning',
         confirmButtonColor: '#946df8',
       })
