@@ -382,9 +382,8 @@ const App = () => {
       if (syncTimeout) {
         clearTimeout(syncTimeout)
       }
-      if (isMounted) {
-        setIsSyncingCloud(false)
-      }
+      // Siempre poner isSyncingCloud a false, sin importar si está montado
+      setIsSyncingCloud(false)
     }
 
     const loadCloudTransactions = async () => {
@@ -392,11 +391,11 @@ const App = () => {
       console.log('[MiroMoney] Iniciando sincronización...')
       
       try {
-        // Timeout de 10 segundos máximo para sincronizar
+        // Timeout de 30 segundos máximo para sincronizar (aumentado para mejor tolerancia a latencia)
         const syncPromise = new Promise<Transaction[]>((resolve, reject) => {
           syncTimeout = setTimeout(() => {
-            reject(new Error('Timeout: La sincronización tardó más de 10 segundos'))
-          }, 10000)
+            reject(new Error('Timeout: La sincronización tardó más de 30 segundos'))
+          }, 30000)
 
           // Ejecutar la sincronización
           ;(async () => {
@@ -414,20 +413,28 @@ const App = () => {
                 const seedSource = transactions.length > 0 ? transactions : mockTransactions
 
                 if (seedSource.length > 0) {
-                  const createdRefs = await Promise.all(
-                    seedSource.map((item) =>
-                      addDoc(transactionsCollection, {
-                        kind: item.kind,
-                        concept: item.concept,
-                        category: item.category,
-                        amount: item.amount,
-                        date: item.date,
-                      }),
-                    ),
-                  )
+                  // Insertar en lotes de 10 para evitar saturar Firebase
+                  const batchSize = 10
+                  const allRefs: unknown[] = []
+                  
+                  for (let i = 0; i < seedSource.length; i += batchSize) {
+                    const batch = seedSource.slice(i, i + batchSize)
+                    const createdRefs = await Promise.all(
+                      batch.map((item) =>
+                        addDoc(transactionsCollection, {
+                          kind: item.kind,
+                          concept: item.concept,
+                          category: item.category,
+                          amount: item.amount,
+                          date: item.date,
+                        }),
+                      ),
+                    )
+                    allRefs.push(...createdRefs)
+                  }
 
-                  const seededTransactions: Transaction[] = createdRefs
-                    .map((ref, index) => ({
+                  const seededTransactions: Transaction[] = (allRefs as { id: string }[])
+                    .map((ref: { id: string }, index: number) => ({
                       id: ref.id,
                       kind: seedSource[index].kind,
                       concept: seedSource[index].concept,
@@ -435,7 +442,7 @@ const App = () => {
                       amount: seedSource[index].amount,
                       date: seedSource[index].date,
                     }))
-                    .sort((a, b) => b.date.localeCompare(a.date))
+                    .sort((a: Transaction, b: Transaction) => b.date.localeCompare(a.date))
 
                   resolve(seededTransactions)
                   return
