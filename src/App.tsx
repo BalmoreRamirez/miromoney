@@ -6,13 +6,14 @@ import {
   signInWithEmailAndPassword,
   signOut,
 } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, doc, getDocs } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore'
 import {
   ArrowDownLeft,
   ArrowUpRight,
   BarChart3,
   BriefcaseBusiness,
   CalendarRange,
+  Pencil,
   Plus,
   Trash2,
   Wallet,
@@ -181,6 +182,11 @@ const getAuthErrorMessage = (code?: string) => {
   }
 }
 
+const isDateWithinRange = (dateText: string, startDate: Date, endDate: Date) => {
+  const date = new Date(`${dateText}T12:00:00`)
+  return date >= startDate && date <= endDate
+}
+
 const App = () => {
   const [isAuthenticated, setIsAuthenticated] = useState(false)
   const [isAuthBootstrapping, setIsAuthBootstrapping] = useState(true)
@@ -219,6 +225,7 @@ const App = () => {
   })
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [isSyncingCloud, setIsSyncingCloud] = useState(false)
   const [isAuthLoading, setIsAuthLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('all')
@@ -287,6 +294,10 @@ const App = () => {
 
     return buildWeeklyReport(weekEntries, startWeek, endWeek)
   }, [transactions])
+
+  const canModifyTransaction = (entry: Transaction) => {
+    return isDateWithinRange(entry.date, currentWeekReport.startWeek, currentWeekReport.endWeek)
+  }
 
   const selectedWeekData = useMemo(() => {
     return weekOptions.find((week) => week.value === selectedReportWeek) ?? weekOptions[0]
@@ -441,6 +452,36 @@ const App = () => {
   }, [isAuthenticated])
 
   const openCreateModal = () => {
+    setEditingTransaction(null)
+    setFormState({
+      kind: 'expense',
+      concept: '',
+      category: '',
+      amount: '',
+      date: toDateInput(today),
+    })
+    setIsEntryModalOpen(true)
+  }
+
+  const openEditModal = (entry: Transaction) => {
+    if (!canModifyTransaction(entry)) {
+      void Swal.fire({
+        title: 'Semana cerrada',
+        text: 'Solo puedes editar movimientos de la semana actual.',
+        icon: 'warning',
+        confirmButtonColor: '#946df8',
+      })
+      return
+    }
+
+    setEditingTransaction(entry)
+    setFormState({
+      kind: entry.kind,
+      concept: entry.concept,
+      category: entry.category,
+      amount: String(entry.amount),
+      date: entry.date,
+    })
     setIsEntryModalOpen(true)
   }
 
@@ -525,6 +566,7 @@ const App = () => {
   }
 
   const closeCreateModal = () => {
+    setEditingTransaction(null)
     setIsEntryModalOpen(false)
   }
 
@@ -550,6 +592,19 @@ const App = () => {
       return
     }
 
+    if (
+      editingTransaction &&
+      !isDateWithinRange(formState.date, currentWeekReport.startWeek, currentWeekReport.endWeek)
+    ) {
+      void Swal.fire({
+        title: 'Fecha no permitida',
+        text: 'Un movimiento editable debe mantenerse dentro de la semana actual.',
+        icon: 'warning',
+        confirmButtonColor: '#946df8',
+      })
+      return
+    }
+
     const payload = {
       kind: formState.kind,
       concept: formState.concept.trim(),
@@ -558,30 +613,63 @@ const App = () => {
       date: formState.date,
     }
 
-    let newTransaction: Transaction = {
-      id: Date.now().toString(),
-      ...payload,
-    }
-
-    if (isFirebaseConfigured && db) {
-      const database = db
-      try {
-        const ref = await addDoc(collection(database, 'transactions'), payload)
-        newTransaction = {
-          id: ref.id,
-          ...payload,
-        }
-      } catch {
+    if (editingTransaction) {
+      if (!canModifyTransaction(editingTransaction)) {
         void Swal.fire({
-          title: 'Sincronizacion pendiente',
-          text: 'No se pudo guardar en Firebase, se guardo localmente.',
+          title: 'Semana cerrada',
+          text: 'No puedes modificar movimientos de semanas anteriores.',
           icon: 'warning',
           confirmButtonColor: '#946df8',
         })
+        return
       }
+
+      if (isFirebaseConfigured && db) {
+        const database = db
+        try {
+          await updateDoc(doc(database, 'transactions', editingTransaction.id), payload)
+        } catch {
+          void Swal.fire({
+            title: 'No se pudo editar en Firebase',
+            text: 'Revisa tu conexion e intenta de nuevo.',
+            icon: 'error',
+            confirmButtonColor: '#946df8',
+          })
+          return
+        }
+      }
+
+      setTransactions((prev) =>
+        prev.map((item) => (item.id === editingTransaction.id ? { ...item, ...payload } : item)),
+      )
+    } else {
+      let newTransaction: Transaction = {
+        id: Date.now().toString(),
+        ...payload,
+      }
+
+      if (isFirebaseConfigured && db) {
+        const database = db
+        try {
+          const ref = await addDoc(collection(database, 'transactions'), payload)
+          newTransaction = {
+            id: ref.id,
+            ...payload,
+          }
+        } catch {
+          void Swal.fire({
+            title: 'Sincronizacion pendiente',
+            text: 'No se pudo guardar en Firebase, se guardo localmente.',
+            icon: 'warning',
+            confirmButtonColor: '#946df8',
+          })
+        }
+      }
+
+      setTransactions((prev) => [newTransaction, ...prev])
     }
 
-    setTransactions((prev) => [newTransaction, ...prev])
+    setEditingTransaction(null)
     setFormState({
       kind: 'expense',
       concept: '',
@@ -592,8 +680,10 @@ const App = () => {
     setIsEntryModalOpen(false)
 
     void Swal.fire({
-      title: 'Movimiento guardado',
-      text: 'Tu registro fue agregado correctamente.',
+      title: editingTransaction ? 'Movimiento actualizado' : 'Movimiento guardado',
+      text: editingTransaction
+        ? 'El registro fue actualizado correctamente.'
+        : 'Tu registro fue agregado correctamente.',
       icon: 'success',
       timer: 1300,
       showConfirmButton: false,
@@ -601,6 +691,16 @@ const App = () => {
   }
 
   const removeTransaction = async (entry: Transaction) => {
+    if (!canModifyTransaction(entry)) {
+      void Swal.fire({
+        title: 'Semana cerrada',
+        text: 'No puedes eliminar movimientos de semanas anteriores.',
+        icon: 'warning',
+        confirmButtonColor: '#946df8',
+      })
+      return
+    }
+
     const result = await Swal.fire({
       title: 'Eliminar movimiento',
       text: `¿Deseas borrar "${entry.concept}"?`,
@@ -797,17 +897,30 @@ const App = () => {
                       </small>
                     </div>
                     <div className="movement-side">
+                      {!canModifyTransaction(entry) && <span className="movement-lock">Cerrado</span>}
                       <strong className={entry.kind === 'income' ? 'positive' : 'negative'}>
                         {entry.kind === 'income' ? '+' : '-'}{money.format(entry.amount)}
                       </strong>
-                      <button
-                        className="delete-btn"
-                        type="button"
-                        onClick={() => void removeTransaction(entry)}
-                        aria-label="Eliminar movimiento"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                      {canModifyTransaction(entry) && (
+                        <>
+                          <button
+                            className="action-btn edit"
+                            type="button"
+                            onClick={() => openEditModal(entry)}
+                            aria-label="Editar movimiento"
+                          >
+                            <Pencil size={15} />
+                          </button>
+                          <button
+                            className="delete-btn"
+                            type="button"
+                            onClick={() => void removeTransaction(entry)}
+                            aria-label="Eliminar movimiento"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </>
+                      )}
                     </div>
                   </article>
                 ))
@@ -852,7 +965,7 @@ const App = () => {
         <section className="modal-backdrop" role="dialog" aria-modal="true">
           <article className="modal-panel">
             <header>
-              <h3>Nuevo movimiento</h3>
+              <h3>{editingTransaction ? 'Editar movimiento' : 'Nuevo movimiento'}</h3>
               <button type="button" onClick={closeCreateModal}>
                 <X size={18} />
               </button>
@@ -938,7 +1051,7 @@ const App = () => {
               </label>
 
               <button className="primary-btn" type="submit">
-                Guardar movimiento
+                {editingTransaction ? 'Guardar cambios' : 'Guardar movimiento'}
               </button>
             </form>
           </article>

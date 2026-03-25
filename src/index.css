@@ -268,6 +268,16 @@ h2 {
   gap: 8px;
 }
 
+.movement-lock {
+  font-size: 11px;
+  font-weight: 700;
+  color: #6f6b7f;
+  background: #ece8f8;
+  border: 2px solid var(--stroke);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
 .movement-side strong {
   font-size: 14px;
 }
@@ -289,6 +299,21 @@ h2 {
   display: grid;
   place-items: center;
   cursor: pointer;
+}
+
+.action-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  border: 2px solid var(--stroke);
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.action-btn.edit {
+  background: #efe9ff;
 }
 
 .empty-state {
