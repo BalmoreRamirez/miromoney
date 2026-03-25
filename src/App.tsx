@@ -448,11 +448,13 @@ const App = () => {
         if (isMounted) {
           setTransactions(cloudTransactions)
         }
-      } catch {
+      } catch (error) {
+        console.error('Error sincronizando Firebase:', error)
+        const errorMsg = error instanceof Error ? error.message : String(error)
         if (isMounted) {
           void Swal.fire({
             title: 'Error de sincronizacion',
-            text: 'No se pudo cargar/sincronizar Firebase. Revisa reglas de Firestore y credenciales.',
+            text: `No se pudo cargar datos. ${errorMsg}. Revisa: 1) Reglas Firestore, 2) Permisos auth, 3) Conexión red.`,
             icon: 'error',
             confirmButtonColor: '#946df8',
           })

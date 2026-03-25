@@ -53,17 +53,49 @@ Despues haz `Clear cache and deploy site`.
 
 ### Firestore Rules (solo usuarios autenticados)
 
+Configura estas reglas en Firestore Security Rules (Firebase Console > Firestore Database > Rules):
+
 ```txt
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /transactions/{docId} {
+    match /transactions/{document=**} {
       allow read, write: if request.auth != null;
-    }
-
-    match /{document=**} {
-      allow read, write: if false;
     }
   }
 }
 ```
+
+**Importante:** Las reglas deben permitir `read` a usuarios autenticados. Si ves "sincronizando..." infinito en producción, verifica que:
+
+1. Las reglas están publicadas (no en draft)
+2. El usuario está autenticado (`request.auth != null`)
+3. La colección es exactamente `transactions`
+4. No hay reglas más restrictivas superiores
+
+## Troubleshooting
+
+### "Aplicación: sincronizando..." infinitamente
+
+**En Netlify/Producción:**
+
+1. Abre DevTools (F12) > Console
+2. Busca el error exacto que dice
+3. Acciones según el error:
+   - **"Missing or insufficient permissions"** → Actualiza las Firestore Rules (ver sección arriba)
+   - **"Failed to get document because the client is offline"** → Revisa conexión a internet del navegador
+   - **"Quota exceeded"** → El proyecto Firebase está en plan gratuito sin cuota. Sube a plan Blaze o verifica uso
+
+**En local:**
+
+- Verifica que `.env` tiene valores válidos de Firebase
+- Que el usuario existe en Firebase Authentication
+- Que las Firestore Rules permiten lectura
+
+### "No configurado"
+
+- Las variables de entorno `VITE_FIREBASE_*` no están definidas
+- En local: crea `.env` desde `.env.example`
+- En Netlify: agrega variables en Site settings > Environment variables
+
+
