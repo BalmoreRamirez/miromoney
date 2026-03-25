@@ -15,6 +15,7 @@ import {
   CalendarRange,
   Pencil,
   Plus,
+  Settings,
   Trash2,
   Wallet,
   X,
@@ -49,6 +50,7 @@ const mockTransactions: Transaction[] = [
 ]
 
 const TRANSACTIONS_STORAGE_KEY = 'miromoney.transactions'
+const CATEGORIES_STORAGE_KEY = 'miromoney.categories'
 const DEFAULT_ADMIN_EMAIL = import.meta.env.VITE_DEFAULT_LOGIN_EMAIL ?? 'miromoney@gmail.com'
 const DEFAULT_ADMIN_PASS = import.meta.env.VITE_DEFAULT_LOGIN_PASSWORD ?? 'miromoney123'
 
@@ -177,6 +179,9 @@ const App = () => {
   })
   const [isEntryModalOpen, setIsEntryModalOpen] = useState(false)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [isCategoryModalOpen, setIsCategoryModalOpen] = useState(false)
+  const [categoryModalKind, setCategoryModalKind] = useState<TransactionKind>('expense')
+  const [newCategoryName, setNewCategoryName] = useState('')
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
   const [isSyncingCloud, setIsSyncingCloud] = useState(false)
   const [isAuthLoading, setIsAuthLoading] = useState(false)
@@ -189,20 +194,39 @@ const App = () => {
     amount: '',
     date: toDateInput(today),
   })
+  const [categoryOptions, setCategoryOptions] = useState<Record<TransactionKind, string[]>>(() => {
+    const saved = window.localStorage.getItem(CATEGORIES_STORAGE_KEY)
+    if (!saved) {
+      return CATEGORY_OPTIONS
+    }
+
+    try {
+      const parsed = JSON.parse(saved) as Record<TransactionKind, string[]>
+      const income = Array.isArray(parsed.income) ? parsed.income.filter((item) => typeof item === 'string') : []
+      const expense = Array.isArray(parsed.expense) ? parsed.expense.filter((item) => typeof item === 'string') : []
+
+      return {
+        income: income.length > 0 ? income : CATEGORY_OPTIONS.income,
+        expense: expense.length > 0 ? expense : CATEGORY_OPTIONS.expense,
+      }
+    } catch {
+      return CATEGORY_OPTIONS
+    }
+  })
 
   const sortedTransactions = useMemo(() => {
     return [...transactions].sort((a, b) => b.date.localeCompare(a.date))
   }, [transactions])
 
   const availableCategories = useMemo(() => {
-    return CATEGORY_OPTIONS[formState.kind]
-  }, [formState.kind])
+    return categoryOptions[formState.kind]
+  }, [categoryOptions, formState.kind])
 
   const filterCategories = useMemo(() => {
     return Array.from(
-      new Set([...CATEGORY_OPTIONS.income, ...CATEGORY_OPTIONS.expense, ...transactions.map((item) => item.category)]),
+      new Set([...categoryOptions.income, ...categoryOptions.expense, ...transactions.map((item) => item.category)]),
     )
-  }, [transactions])
+  }, [categoryOptions, transactions])
 
   const filteredTransactions = useMemo(() => {
     if (selectedCategory === 'all') {
@@ -283,6 +307,36 @@ const App = () => {
 
   useEffect(() => {
     window.localStorage.setItem(TRANSACTIONS_STORAGE_KEY, JSON.stringify(transactions))
+  }, [transactions])
+
+  useEffect(() => {
+    window.localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(categoryOptions))
+  }, [categoryOptions])
+
+  useEffect(() => {
+    setCategoryOptions((prev) => {
+      const incomeFromTransactions = transactions
+        .filter((item) => item.kind === 'income')
+        .map((item) => item.category)
+      const expenseFromTransactions = transactions
+        .filter((item) => item.kind === 'expense')
+        .map((item) => item.category)
+
+      const nextIncome = Array.from(new Set([...prev.income, ...incomeFromTransactions]))
+      const nextExpense = Array.from(new Set([...prev.expense, ...expenseFromTransactions]))
+
+      if (
+        nextIncome.length === prev.income.length &&
+        nextExpense.length === prev.expense.length
+      ) {
+        return prev
+      }
+
+      return {
+        income: nextIncome,
+        expense: nextExpense,
+      }
+    })
   }, [transactions])
 
   useEffect(() => {
@@ -413,6 +467,158 @@ const App = () => {
       date: toDateInput(today),
     })
     setIsEntryModalOpen(true)
+  }
+
+  const openCategoryModal = (kind: TransactionKind) => {
+    setCategoryModalKind(kind)
+    setNewCategoryName('')
+    setIsCategoryModalOpen(true)
+  }
+
+  const openCategoryModalFromList = () => {
+    const inferredKind: TransactionKind = categoryOptions.income.includes(selectedCategory)
+      ? 'income'
+      : 'expense'
+    openCategoryModal(inferredKind)
+  }
+
+  const closeCategoryModal = () => {
+    setIsCategoryModalOpen(false)
+    setNewCategoryName('')
+  }
+
+  const addCategory = () => {
+    const value = newCategoryName.trim()
+
+    if (!value) {
+      return
+    }
+
+    const exists = categoryOptions[categoryModalKind].some(
+      (item) => item.toLowerCase() === value.toLowerCase(),
+    )
+
+    if (exists) {
+      void Swal.fire({
+        title: 'Categoria duplicada',
+        text: 'Ya existe una categoria con ese nombre.',
+        icon: 'warning',
+        confirmButtonColor: '#946df8',
+      })
+      return
+    }
+
+    setCategoryOptions((prev) => ({
+      ...prev,
+      [categoryModalKind]: [...prev[categoryModalKind], value],
+    }))
+    setNewCategoryName('')
+  }
+
+  const renameCategory = async (kind: TransactionKind, oldName: string) => {
+    const result = await Swal.fire({
+      title: 'Actualizar categoria',
+      input: 'text',
+      inputValue: oldName,
+      inputPlaceholder: 'Nuevo nombre',
+      showCancelButton: true,
+      confirmButtonText: 'Guardar',
+      cancelButtonText: 'Cancelar',
+      confirmButtonColor: '#946df8',
+      inputValidator: (value) => {
+        if (!value.trim()) {
+          return 'El nombre es obligatorio.'
+        }
+
+        const isDuplicate = categoryOptions[kind].some(
+          (item) => item.toLowerCase() === value.trim().toLowerCase() && item !== oldName,
+        )
+
+        if (isDuplicate) {
+          return 'Ya existe una categoria con ese nombre.'
+        }
+
+        return undefined
+      },
+    })
+
+    if (!result.isConfirmed || !result.value) {
+      return
+    }
+
+    const newName = result.value.trim()
+    if (newName === oldName) {
+      return
+    }
+
+    const affected = transactions.filter((item) => item.kind === kind && item.category === oldName)
+
+    if (isFirebaseConfigured && db && affected.length > 0) {
+      const database = db
+      try {
+        await Promise.all(
+          affected.map((item) => updateDoc(doc(database, 'transactions', item.id), { category: newName })),
+        )
+      } catch {
+        void Swal.fire({
+          title: 'No se pudo actualizar en Firebase',
+          text: 'Intenta nuevamente para evitar desincronizacion.',
+          icon: 'error',
+          confirmButtonColor: '#946df8',
+        })
+        return
+      }
+    }
+
+    setCategoryOptions((prev) => ({
+      ...prev,
+      [kind]: prev[kind].map((item) => (item === oldName ? newName : item)),
+    }))
+
+    if (affected.length > 0) {
+      setTransactions((prev) =>
+        prev.map((item) =>
+          item.kind === kind && item.category === oldName ? { ...item, category: newName } : item,
+        ),
+      )
+    }
+
+    setFormState((prev) => {
+      if (prev.kind === kind && prev.category === oldName) {
+        return { ...prev, category: newName }
+      }
+      return prev
+    })
+  }
+
+  const removeCategory = (kind: TransactionKind, categoryName: string) => {
+    const usedCount = transactions.filter(
+      (item) => item.kind === kind && item.category === categoryName,
+    ).length
+
+    if (usedCount > 0) {
+      void Swal.fire({
+        title: 'No se puede eliminar',
+        text: 'La categoria ya esta asociada a movimientos. Puedes actualizar su nombre.',
+        icon: 'warning',
+        confirmButtonColor: '#946df8',
+      })
+      return
+    }
+
+    setCategoryOptions((prev) => ({
+      ...prev,
+      [kind]: prev[kind].filter((item) => item !== categoryName),
+    }))
+
+    setFormState((prev) => {
+      if (prev.kind === kind && prev.category === categoryName) {
+        return { ...prev, category: '' }
+      }
+      return prev
+    })
+
+    setSelectedCategory((prev) => (prev === categoryName ? 'all' : prev))
   }
 
   const openEditModal = (entry: Transaction) => {
@@ -764,6 +970,15 @@ const App = () => {
             <button
               className="icon-ghost-btn"
               type="button"
+              onClick={openCategoryModalFromList}
+              aria-label="Gestionar categorias"
+              title="Gestionar categorias"
+            >
+              <Settings size={18} />
+            </button>
+            <button
+              className="icon-ghost-btn"
+              type="button"
               onClick={openReportModal}
               aria-label="Abrir reporte semanal"
               title="Reporte semanal"
@@ -1008,6 +1223,83 @@ const App = () => {
                 {editingTransaction ? 'Guardar cambios' : 'Guardar movimiento'}
               </button>
             </form>
+          </article>
+        </section>
+      )}
+
+      {isCategoryModalOpen && (
+        <section className="modal-backdrop" role="dialog" aria-modal="true">
+          <article className="modal-panel">
+            <header>
+              <h3>Gestionar categorias</h3>
+              <button type="button" onClick={closeCategoryModal}>
+                <X size={18} />
+              </button>
+            </header>
+
+            <div className="toggle-row">
+              <button
+                type="button"
+                className={categoryModalKind === 'income' ? 'active' : ''}
+                onClick={() => setCategoryModalKind('income')}
+              >
+                Ingreso
+              </button>
+              <button
+                type="button"
+                className={categoryModalKind === 'expense' ? 'active' : ''}
+                onClick={() => setCategoryModalKind('expense')}
+              >
+                Egreso
+              </button>
+            </div>
+
+            <section className="category-add-row">
+              <input
+                value={newCategoryName}
+                onChange={(event) => setNewCategoryName(event.target.value)}
+                placeholder="Nueva categoria"
+              />
+              <button className="primary-btn" type="button" onClick={addCategory}>
+                Agregar
+              </button>
+            </section>
+
+            <section className="category-list">
+              {categoryOptions[categoryModalKind].map((categoryName) => {
+                const usedCount = transactions.filter(
+                  (item) => item.kind === categoryModalKind && item.category === categoryName,
+                ).length
+
+                return (
+                  <article className="category-item" key={`${categoryModalKind}-${categoryName}`}>
+                    <div>
+                      <p>{categoryName}</p>
+                      <small>{usedCount > 0 ? `${usedCount} movimiento(s)` : 'Sin uso'}</small>
+                    </div>
+                    <div className="category-actions">
+                      <button
+                        className="action-btn edit"
+                        type="button"
+                        onClick={() => void renameCategory(categoryModalKind, categoryName)}
+                        aria-label="Actualizar categoria"
+                      >
+                        <Pencil size={14} />
+                      </button>
+                      <button
+                        className="delete-btn"
+                        type="button"
+                        onClick={() => removeCategory(categoryModalKind, categoryName)}
+                        aria-label="Eliminar categoria"
+                        disabled={usedCount > 0}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </article>
+                )
+              })}
+            </section>
           </article>
         </section>
       )}

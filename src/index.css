@@ -421,6 +421,7 @@ h2 {
   width: min(430px, 100%);
   max-height: 90svh;
   overflow: auto;
+  overflow-x: hidden;
   background: #fcfbff;
   border-radius: 24px;
   border: 3px solid var(--stroke);
@@ -504,6 +505,57 @@ select {
   color: #fff;
   font-weight: 700;
   cursor: pointer;
+}
+
+.category-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.category-add-row input {
+  min-width: 0;
+}
+
+.category-add-row .primary-btn {
+  padding: 10px 14px;
+  white-space: nowrap;
+}
+
+.category-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.category-item {
+  border: 2px solid var(--stroke);
+  border-radius: 12px;
+  background: #fff;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.category-item p {
+  margin: 0;
+  font-weight: 600;
+}
+
+.category-item small {
+  color: var(--muted);
+}
+
+.category-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.category-actions .delete-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 .report-range {
@@ -632,6 +684,14 @@ button {
 
   .movement-list {
     max-height: none;
+  }
+
+  .category-add-row {
+    grid-template-columns: 1fr;
+  }
+
+  .category-add-row .primary-btn {
+    width: 100%;
   }
 
   .mobile-only {
