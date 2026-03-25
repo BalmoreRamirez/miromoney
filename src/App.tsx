@@ -130,9 +130,9 @@ const getAuthErrorMessage = (code?: string) => {
     case 'auth/invalid-api-key':
       return 'La API key no corresponde a un proyecto Firebase valido o esta mal configurada.'
     case 'auth/network-request-failed':
-      return 'Fallo de red al conectar con Firebase Authentication.'
+      return 'Fallo de red al conectar con Firebase Authentication'
     default:
-      return 'No se pudo autenticar con Firebase. Revisa configuracion y credenciales.'
+      return 'No se pudo autenticar con Firebase. Revisa configuracion y credenciales'
   }
 }
 
