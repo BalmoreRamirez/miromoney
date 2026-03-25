@@ -117,6 +117,17 @@ h1 {
   cursor: pointer;
 }
 
+.icon-ghost-btn {
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--stroke);
+  border-radius: 12px;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+
 .ghost-btn.full {
   width: 100%;
   justify-content: center;
@@ -603,6 +614,10 @@ button {
     justify-content: center;
   }
 
+  .header-actions .primary-btn.inline {
+    display: none;
+  }
+
   .content-grid {
     grid-template-columns: 1fr;
   }
@@ -621,6 +636,10 @@ button {
 
   .mobile-only {
     display: grid;
+    position: fixed;
+    right: 16px;
+    bottom: calc(16px + env(safe-area-inset-bottom));
+    z-index: 30;
   }
 
   .app-signature {

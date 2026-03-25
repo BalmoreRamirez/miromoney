@@ -761,8 +761,14 @@ const App = () => {
             <h1>MiroMoney</h1>
           </div>
           <div className="header-actions">
-            <button className="ghost-btn" type="button" onClick={openReportModal}>
-              <BarChart3 size={18} /> Reporte
+            <button
+              className="icon-ghost-btn"
+              type="button"
+              onClick={openReportModal}
+              aria-label="Abrir reporte semanal"
+              title="Reporte semanal"
+            >
+              <BarChart3 size={18} />
             </button>
             <button className="primary-btn inline" type="button" onClick={openCreateModal}>
               <Plus size={18} /> Nuevo movimiento
@@ -780,9 +786,6 @@ const App = () => {
                 <p>Salud financiera</p>
                 <strong>{currentWeekReport.health}</strong>
               </div>
-              <button type="button" onClick={openReportModal}>
-                Ver reporte semanal
-              </button>
             </article>
 
             <section className="summary-grid">
@@ -902,9 +905,6 @@ const App = () => {
               <strong>{currentWeekReport.savingsRate.toFixed(1)}%</strong>
             </article>
 
-            <button className="ghost-btn full" type="button" onClick={openReportModal}>
-              <CalendarRange size={18} /> Abrir reporte detallado
-            </button>
           </aside>
         </section>
 
