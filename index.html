@@ -1,13 +1,33 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>miromoney</title>
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#946df8" />
+    <meta name="description" content="Aplicación para gestionar tus movimientos financieros personales" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="MiroMoney" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><defs><linearGradient id='grad' x1='0%' y1='0%' x2='100%' y2='100%'><stop offset='0%' style='stop-color:%23946df8;stop-opacity:1' /><stop offset='100%' style='stop-color:%235a3ba0;stop-opacity:1' /></linearGradient></defs><rect width='180' height='180' fill='url(%23grad)' rx='40'/><circle cx='90' cy='60' r='25' fill='%23fff'/><path d='M65 100 L90 118 L115 100 Z' fill='%23fff'/><circle cx='90' cy='140' r='12' fill='%23fff'/></svg>" />
+    <title>MiroMoney</title>
   </head>
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+            .then(registration => {
+              console.log('Service Worker registrado exitosamente:', registration)
+            })
+            .catch(error => {
+              console.log('Error al registrar Service Worker:', error)
+            })
+        })
+      }
+    </script>
   </body>
 </html>
