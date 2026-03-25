@@ -401,7 +401,9 @@ const App = () => {
               setTransactions(seededTransactions)
             }
 
-            return
+            if (!isMounted) {
+              return
+            }
           }
         }
 
