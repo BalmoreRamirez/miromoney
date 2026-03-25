@@ -46,54 +46,6 @@ const minusDays = (days: number) => {
 }
 
 const mockTransactions: Transaction[] = [
-  {
-    id: '1',
-    kind: 'income',
-    concept: 'Proyecto landing page',
-    category: 'Freelance',
-    amount: 1280,
-    date: minusDays(0),
-  },
-  {
-    id: '2',
-    kind: 'expense',
-    concept: 'Mercado semanal',
-    category: 'Hogar',
-    amount: 93.5,
-    date: minusDays(1),
-  },
-  {
-    id: '3',
-    kind: 'expense',
-    concept: 'Spotify + Netflix',
-    category: 'Suscripciones',
-    amount: 28.99,
-    date: minusDays(2),
-  },
-  {
-    id: '4',
-    kind: 'income',
-    concept: 'Clase de asesoría',
-    category: 'Educación',
-    amount: 140,
-    date: minusDays(3),
-  },
-  {
-    id: '5',
-    kind: 'expense',
-    concept: 'Gasolina',
-    category: 'Transporte',
-    amount: 54,
-    date: minusDays(4),
-  },
-  {
-    id: '6',
-    kind: 'expense',
-    concept: 'Cena con amigos',
-    category: 'Ocio',
-    amount: 46,
-    date: minusDays(5),
-  },
 ]
 
 const TRANSACTIONS_STORAGE_KEY = 'miromoney.transactions'
