@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import Swal from 'sweetalert2'
 import {
@@ -313,6 +313,8 @@ const App = () => {
     window.localStorage.setItem(CATEGORIES_STORAGE_KEY, JSON.stringify(categoryOptions))
   }, [categoryOptions])
 
+  const hasInitializedSync = useRef(false)
+
   useEffect(() => {
     setCategoryOptions((prev) => {
       const incomeFromTransactions = transactions
@@ -348,6 +350,10 @@ const App = () => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       setIsAuthenticated(Boolean(user))
       setIsAuthBootstrapping(false)
+      // Reset sync flag cuando se desautentica
+      if (!user) {
+        hasInitializedSync.current = false
+      }
     })
 
     return () => {
@@ -360,6 +366,12 @@ const App = () => {
       return
     }
 
+    // Solo sincronizar una vez después de autenticarse
+    if (hasInitializedSync.current) {
+      return
+    }
+
+    hasInitializedSync.current = true
     const database = db
 
     let isMounted = true
@@ -457,7 +469,7 @@ const App = () => {
     return () => {
       isMounted = false
     }
-  }, [isAuthenticated, transactions])
+  }, [isAuthenticated])
 
   const openCreateModal = () => {
     setEditingTransaction(null)
