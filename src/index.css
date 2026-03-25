@@ -344,6 +344,14 @@ h2 {
   display: none;
 }
 
+.app-signature {
+  margin: 18px 0 2px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 600;
+  color: #5a5766;
+}
+
 .insight-panel {
   border: 2px solid var(--stroke);
   border-radius: 20px;
@@ -613,5 +621,9 @@ button {
 
   .mobile-only {
     display: grid;
+  }
+
+  .app-signature {
+    margin-bottom: 0;
   }
 }

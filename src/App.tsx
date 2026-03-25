@@ -911,6 +911,8 @@ const App = () => {
         <button className="fab mobile-only" type="button" onClick={openCreateModal}>
           <Plus size={28} />
         </button>
+
+        <p className="app-signature">Desarrollado por: Ing Balmore Ramirez</p>
       </section>
 
       {isEntryModalOpen && (
