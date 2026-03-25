@@ -455,7 +455,7 @@ const App = () => {
     return () => {
       isMounted = false
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, transactions])
 
   const openCreateModal = () => {
     setEditingTransaction(null)
