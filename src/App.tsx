@@ -361,6 +361,7 @@ const App = () => {
     }
   }, [])
 
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- Intencional: evita bucle infinito, controlado por ref
   useEffect(() => {
     if (!isAuthenticated || !isFirebaseConfigured || !db) {
       return
