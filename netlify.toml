@@ -2,14 +2,36 @@
   command = "npm run build"
   publish = "dist"
 
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
+# Cachear assets estáticos agresivamente
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+    X-Content-Type-Options = "nosniff"
 
+# Headers de seguridad para HTML
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Headers globales
 [[headers]]
   for = "/*"
   [headers.values]
     X-Frame-Options = "DENY"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+    # Permitir que el service worker funcione en HTTPS
+    Service-Worker-Allowed = "/"
+
+# Redirigir rutas SPA al index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+  # No aplicar a archivos estáticos
+  conditions = { NOT = [{ path = "/assets/*" }, { path = "/*.{js,css,svg,png,ico,jpg,webp,woff,woff2}" }] }

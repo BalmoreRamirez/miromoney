@@ -183,7 +183,6 @@ const App = () => {
   const [categoryModalKind, setCategoryModalKind] = useState<TransactionKind>('expense')
   const [newCategoryName, setNewCategoryName] = useState('')
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null)
-  const [isSyncingCloud, setIsSyncingCloud] = useState(false)
   const [isAuthLoading, setIsAuthLoading] = useState(false)
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedReportWeek, setSelectedReportWeek] = useState(() => toDateInput(getStartOfWeek(new Date())))
@@ -382,12 +381,9 @@ const App = () => {
       if (syncTimeout) {
         clearTimeout(syncTimeout)
       }
-      // Siempre poner isSyncingCloud a false, sin importar si está montado
-      setIsSyncingCloud(false)
     }
 
     const loadCloudTransactions = async () => {
-      setIsSyncingCloud(true)
       console.log('[MiroMoney] Iniciando sincronización...')
       
       try {
@@ -1161,9 +1157,6 @@ const App = () => {
           <aside className="insight-panel">
             <h3>Resumen de la semana</h3>
             <p>Estado actual: <strong>{currentWeekReport.health}</strong></p>
-            <p className="cloud-status">
-              Aplicación: {isFirebaseConfigured ? (isSyncingCloud ? 'sincronizando...' : 'conectado') : 'no configurado'}
-            </p>
 
             <article className="mini-stat">
               <span>Ingresos registrados</span>
