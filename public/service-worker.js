@@ -1,8 +1,7 @@
-const CACHE_NAME = 'miromoney-v2'
+const CACHE_NAME = 'miromoney-v3'
 const URLS_TO_CACHE = [
-  '/',
   '/index.html',
-  '/manifest.json'
+  '/manifest.json',
 ]
 
 // Instalar el service worker
@@ -41,12 +40,32 @@ self.addEventListener('fetch', event => {
     return
   }
 
+  if (url.pathname.endsWith('/service-worker.js')) {
+    event.respondWith(fetch(request))
+    return
+  }
+
   // Dejar pasar todo lo que sea Firebase/Google sin tocar (evita loops en channel requests)
   if (
     request.url.includes('firebaseio.com') ||
     request.url.includes('googleapis.com') ||
     request.url.includes('gstatic.com')
   ) {
+    return
+  }
+
+  if (request.mode === 'navigate') {
+    event.respondWith(
+      fetch(request)
+        .then((response) => {
+          const responseClone = response.clone()
+          caches.open(CACHE_NAME).then((cache) => {
+            cache.put('/index.html', responseClone)
+          })
+          return response
+        })
+        .catch(() => caches.match('/index.html')),
+    )
     return
   }
 

@@ -1,13 +1,13 @@
 {
-  "name": "MiroMoney - Gestor de Movimientos",
+  "name": "MiroMoney Cards",
   "short_name": "MiroMoney",
-  "description": "Aplicación para gestionar tus movimientos financieros personales",
+  "description": "Aplicación para gestionar tarjetas de crédito, cargos y fechas de pago",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#141417",
-  "theme_color": "#946df8",
+  "theme_color": "#0f766e",
   "screenshots": [
     {
       "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 540 720'><rect fill='%23141417' width='540' height='720'/><circle cx='270' cy='360' r='100' fill='%23946df8'/></svg>",
@@ -45,13 +45,13 @@
   "categories": ["finance", "productivity"],
   "shortcuts": [
     {
-      "name": "Nuevo Movimiento",
-      "short_name": "Nuevo",
-      "description": "Crear un nuevo movimiento",
+      "name": "Nueva tarjeta",
+      "short_name": "Tarjeta",
+      "description": "Crear una nueva tarjeta",
       "url": "/?action=new",
       "icons": [
         {
-          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect fill='%23946df8' width='96' height='96' rx='22'/><text x='48' y='55' text-anchor='middle' fill='%23fff' font-size='48' font-weight='bold'>+</text></svg>",
+          "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 96 96'><rect fill='%230f766e' width='96' height='96' rx='22'/><text x='48' y='55' text-anchor='middle' fill='%23fff' font-size='48' font-weight='bold'>+</text></svg>",
           "sizes": "96x96",
           "type": "image/svg+xml"
         }
