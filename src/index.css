@@ -1,14 +1,14 @@
-@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&family=Space+Grotesk:wght@500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 :root {
-  --bg: #f6f1e7;
-  --surface: #ffffff;
-  --ink: #101828;
-  --muted: #5b6476;
-  --stroke: #101828;
-  --accent: #0f766e;
-  --accent-strong: #115e59;
-  --shadow: rgba(16, 24, 40, 0.12);
+  --bg: #e8e5ef;
+  --surface: #efecf5;
+  --ink: #1f2230;
+  --muted: #747a8e;
+  --stroke: #313548;
+  --accent: #7e5ce5;
+  --accent-strong: #6e4fce;
+  --shadow: rgba(31, 34, 48, 0.07);
 }
 
 * {
@@ -22,13 +22,9 @@ html {
 body {
   margin: 0;
   min-height: 100svh;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'Plus Jakarta Sans', sans-serif;
   color: var(--ink);
-  background:
-    radial-gradient(circle at 12% 10%, rgba(15, 118, 110, 0.16), transparent 30%),
-    radial-gradient(circle at 88% 12%, rgba(249, 115, 22, 0.14), transparent 28%),
-    radial-gradient(circle at 50% 100%, rgba(37, 99, 235, 0.12), transparent 28%),
-    linear-gradient(180deg, #f9f4ea 0%, var(--bg) 55%, #f3efe6 100%);
+  background: linear-gradient(180deg, #ece9f2 0%, var(--bg) 100%);
 }
 
 body,
@@ -45,8 +41,8 @@ h3,
 h4,
 h5,
 h6 {
-  font-family: 'Space Grotesk', sans-serif;
-  letter-spacing: -0.03em;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  letter-spacing: -0.02em;
 }
 
 button,
@@ -65,5 +61,5 @@ a {
 }
 
 ::selection {
-  background: rgba(15, 118, 110, 0.2);
+  background: rgba(126, 92, 229, 0.2);
 }

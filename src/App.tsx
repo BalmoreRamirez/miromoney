@@ -198,6 +198,7 @@ const App = () => {
   const [editingCardId, setEditingCardId] = useState<string | null>(null)
   const [isCardModalOpen, setIsCardModalOpen] = useState(false)
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
+  const [isPurchasesModalOpen, setIsPurchasesModalOpen] = useState(false)
   const [isManageCardsModalOpen, setIsManageCardsModalOpen] = useState(false)
   const [cardForm, setCardForm] = useState<CardFormState>(() => initialCardForm())
   const [chargeForm, setChargeForm] = useState<ChargeFormState>(() => initialChargeForm(loadCards()))
@@ -316,7 +317,6 @@ const App = () => {
   const recentCharges = useMemo(() => {
     return [...charges]
       .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 8)
       .map((charge) => {
         const card = cards.find((item) => item.id === charge.cardId)
 
@@ -326,6 +326,24 @@ const App = () => {
         }
       })
   }, [cards, charges])
+
+  const monthlyCardPayments = useMemo(() => {
+    const year = selectedMonthDate.getFullYear()
+    const monthIndex = selectedMonthDate.getMonth()
+
+    return cardSummaries
+      .map((card) => ({
+        id: card.id,
+        label: getCardDisplayName(card),
+        amount: card.balance,
+        dueDate: toCalendarDate(year, monthIndex, card.paymentDay),
+      }))
+      .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
+  }, [cardSummaries, selectedMonthDate])
+
+  const monthlyPaymentsTotal = useMemo(() => {
+    return monthlyCardPayments.reduce((sum, item) => sum + item.amount, 0)
+  }, [monthlyCardPayments])
 
   const hasRelatedTransactions = (cardId: string) => {
     return (cardChargesMap[cardId]?.length ?? 0) > 0
@@ -368,9 +386,17 @@ const App = () => {
     setIsChargeModalOpen(true)
   }
 
+  const openPurchasesModal = () => {
+    setIsPurchasesModalOpen(true)
+  }
+
   const closeChargeModal = () => {
     setIsChargeModalOpen(false)
     setChargeForm(initialChargeForm(cards))
+  }
+
+  const closePurchasesModal = () => {
+    setIsPurchasesModalOpen(false)
   }
 
   const openManageCardsModal = () => {
@@ -524,28 +550,21 @@ const App = () => {
           <div className="hero-actions">
             <button
               type="button"
-              className="pill-button"
-              onClick={openNewCardModal}
+              className="ghost-button"
+              onClick={openPurchasesModal}
             >
-              <Plus size={16} />
-              Nueva tarjeta
+              <Banknote size={16} />
+              Compras
             </button>
             <button
               type="button"
-              className="pill-button secondary"
-              onClick={openChargeModal}
-            >
-              <ArrowLeftRight size={16} />
-              Nuevo gasto
-            </button>
-            <button
-              type="button"
-              className="icon-pill-button"
+              className="ghost-button"
               onClick={openManageCardsModal}
               aria-label="Configurar tarjetas"
               title="Configurar tarjetas"
             >
               <Settings2 size={16} />
+              Tarjetas
             </button>
           </div>
         </section>
@@ -625,68 +644,29 @@ const App = () => {
             <section className="panel">
               <div className="section-head">
                 <div>
-                  <p className="eyebrow">Movimientos recientes</p>
-                  <h2>Compras y gastos</h2>
+                  <p className="eyebrow">Pagos del mes</p>
+                  <h2>Pagos por tarjeta</h2>
                 </div>
-                <span className="section-badge">Últimos 8 registros</span>
+                <span className="section-badge">{money.format(monthlyPaymentsTotal)}</span>
               </div>
 
-              {recentCharges.length === 0 ? (
-                <div className="empty-state compact">
-                  <Banknote size={28} />
-                  <p>Aún no has registrado movimientos en tus tarjetas.</p>
-                </div>
-              ) : (
-                <div className="charge-list">
-                  {recentCharges.map((charge) => (
-                    <article className="charge-item" key={charge.id}>
-                      <div>
-                        <p className="movement-meta">{charge.cardLabel}</p>
-                        <h3>{charge.concept}</h3>
-                        <span>{charge.date}</span>
-                      </div>
-                      <div className="charge-right">
-                        <strong>{money.format(charge.amount)}</strong>
-                        <button type="button" className="icon-button danger" onClick={() => handleDeleteCharge(charge)} aria-label="Eliminar gasto">
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="panel">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Agenda del mes</p>
-                  <h2>Próximos pagos</h2>
-                </div>
-                <span className="section-badge">Total por fecha</span>
-              </div>
-
-              {paymentEvents.length === 0 ? (
+              {monthlyCardPayments.length === 0 ? (
                 <div className="empty-state compact">
                   <CalendarDays size={28} />
-                  <p>No hay pagos programados para este mes.</p>
+                  <p>No hay tarjetas registradas para calcular pagos del mes.</p>
                 </div>
               ) : (
-                <div className="agenda-list">
-                  {paymentEvents.map((event) => (
-                    <article className="agenda-item" key={event.dateText}>
+                <div className="monthly-payments-list">
+                  {monthlyCardPayments.map((payment) => (
+                    <article className="monthly-payment-item" key={payment.id}>
                       <div>
-                        <p>{event.dateText}</p>
-                        <strong>{money.format(event.total)}</strong>
+                        <p className="movement-meta">{payment.label}</p>
+                        <h3>{money.format(payment.amount)}</h3>
+                        <span>Pago: {toDateInput(payment.dueDate)}</span>
                       </div>
-                      <ul>
-                        {event.cards.map((card) => (
-                          <li key={card.id}>
-                            <span>{card.label}</span>
-                            <strong>{money.format(card.amount)}</strong>
-                          </li>
-                        ))}
-                      </ul>
+                      <div className="charge-right">
+                        <strong>Día {payment.dueDate.getDate()}</strong>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -874,57 +854,163 @@ const App = () => {
               <div className="empty-state compact">
                 <CreditCard size={28} />
                 <p>No hay tarjetas registradas.</p>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    closeManageCardsModal()
+                    openNewCardModal()
+                  }}
+                >
+                  <Plus size={16} />
+                  Nueva tarjeta
+                </button>
               </div>
             ) : (
-              <div className="manage-cards-list">
-                {cardSummaries.map((card) => {
-                  const totalTransactions = cardChargesMap[card.id]?.length ?? 0
-                  const isLocked = totalTransactions > 0
+              <div className="manage-cards-table-wrap">
+                <div className="manage-modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={() => {
+                      closeManageCardsModal()
+                      openNewCardModal()
+                    }}
+                  >
+                    <Plus size={16} />
+                    Nueva tarjeta
+                  </button>
+                </div>
 
-                  return (
-                    <article className="manage-card-item" key={card.id}>
-                      <div>
-                        <p className="manage-card-title">{getCardDisplayName(card)}</p>
-                        <span>
-                          {isLocked
-                            ? `Tiene ${totalTransactions} transacción(es).`
-                            : 'Sin transacciones relacionadas.'}
-                        </span>
-                      </div>
-                      <div className="manage-card-actions">
-                        <button
-                          type="button"
-                          className="icon-button"
-                          onClick={() => {
-                            closeManageCardsModal()
-                            openEditCardModal(card)
-                          }}
-                          disabled={isLocked}
-                          aria-label="Actualizar tarjeta"
-                          title={isLocked ? 'No disponible: la tarjeta tiene transacciones.' : 'Actualizar tarjeta'}
-                        >
-                          <Pencil size={16} />
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button danger"
-                          onClick={() => handleDeleteCard(card)}
-                          disabled={isLocked}
-                          aria-label="Eliminar tarjeta"
-                          title={isLocked ? 'No disponible: la tarjeta tiene transacciones.' : 'Eliminar tarjeta'}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </article>
-                  )
-                })}
+                <div className="table-wrap">
+                  <table className="cards-table" aria-label="Listado de tarjetas">
+                    <thead>
+                      <tr>
+                        <th>Tarjeta</th>
+                        <th>Saldo</th>
+                        <th>Corte</th>
+                        <th>Pago</th>
+                        <th>Estado</th>
+                        <th>Acciones</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cardSummaries.map((card) => {
+                        const totalTransactions = cardChargesMap[card.id]?.length ?? 0
+                        const isLocked = totalTransactions > 0
+
+                        return (
+                          <tr key={card.id}>
+                            <td>{getCardDisplayName(card)}</td>
+                            <td>{money.format(card.balance)}</td>
+                            <td>Día {card.closingDay}</td>
+                            <td>Día {card.paymentDay}</td>
+                            <td>
+                              {isLocked
+                                ? `${totalTransactions} transacción(es)`
+                                : 'Sin transacciones'}
+                            </td>
+                            <td>
+                              <div className="table-actions">
+                                <button
+                                  type="button"
+                                  className="icon-button"
+                                  onClick={() => {
+                                    closeManageCardsModal()
+                                    openEditCardModal(card)
+                                  }}
+                                  disabled={isLocked}
+                                  aria-label="Actualizar tarjeta"
+                                  title={isLocked ? 'No disponible: la tarjeta tiene transacciones.' : 'Actualizar tarjeta'}
+                                >
+                                  <Pencil size={16} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="icon-button danger"
+                                  onClick={() => handleDeleteCard(card)}
+                                  disabled={isLocked}
+                                  aria-label="Eliminar tarjeta"
+                                  title={isLocked ? 'No disponible: la tarjeta tiene transacciones.' : 'Eliminar tarjeta'}
+                                >
+                                  <Trash2 size={16} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
 
             <p className="manage-cards-note">
               Solo puedes actualizar o eliminar tarjetas que no tengan transacciones relacionadas.
             </p>
+          </section>
+        </div>
+      ) : null}
+
+      {isPurchasesModalOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={closePurchasesModal}>
+          <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Compras</p>
+                <h2>Gestionar compras</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={closePurchasesModal} aria-label="Cerrar compras">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="section-head">
+              <div>
+                <p className="eyebrow">Historial</p>
+                <h3>Compras registradas</h3>
+              </div>
+              <div className="detail-actions">
+                <span className="section-badge">{recentCharges.length} registros</span>
+                <button
+                  type="button"
+                  className="pill-button secondary"
+                  onClick={() => {
+                    closePurchasesModal()
+                    openChargeModal()
+                  }}
+                >
+                  <ArrowLeftRight size={16} />
+                  Nuevo gasto
+                </button>
+              </div>
+            </div>
+
+            {recentCharges.length === 0 ? (
+              <div className="empty-state compact">
+                <Banknote size={28} />
+                <p>No hay compras registradas.</p>
+              </div>
+            ) : (
+              <div className="purchases-modal-list">
+                {recentCharges.map((charge) => (
+                  <article className="charge-item" key={charge.id}>
+                    <div>
+                      <p className="movement-meta">{charge.cardLabel}</p>
+                      <h3>{charge.concept}</h3>
+                      <span>{charge.date}</span>
+                    </div>
+                    <div className="charge-right">
+                      <strong>{money.format(charge.amount)}</strong>
+                      <button type="button" className="icon-button danger" onClick={() => handleDeleteCharge(charge)} aria-label="Eliminar gasto">
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       ) : null}
