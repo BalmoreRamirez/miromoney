@@ -975,7 +975,7 @@ const App = () => {
                 <span className="section-badge">{recentCharges.length} registros</span>
                 <button
                   type="button"
-                  className="pill-button secondary"
+                  className="ghost-button"
                   onClick={() => {
                     closePurchasesModal()
                     openChargeModal()
@@ -993,22 +993,40 @@ const App = () => {
                 <p>No hay compras registradas.</p>
               </div>
             ) : (
-              <div className="purchases-modal-list">
-                {recentCharges.map((charge) => (
-                  <article className="charge-item" key={charge.id}>
-                    <div>
-                      <p className="movement-meta">{charge.cardLabel}</p>
-                      <h3>{charge.concept}</h3>
-                      <span>{charge.date}</span>
-                    </div>
-                    <div className="charge-right">
-                      <strong>{money.format(charge.amount)}</strong>
-                      <button type="button" className="icon-button danger" onClick={() => handleDeleteCharge(charge)} aria-label="Eliminar gasto">
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </article>
-                ))}
+              <div className="table-wrap">
+                <table className="cards-table" aria-label="Listado de compras">
+                  <thead>
+                    <tr>
+                      <th>Tarjeta</th>
+                      <th>Concepto</th>
+                      <th>Fecha</th>
+                      <th>Monto</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentCharges.map((charge) => (
+                      <tr key={charge.id}>
+                        <td>{charge.cardLabel}</td>
+                        <td>{charge.concept}</td>
+                        <td>{charge.date}</td>
+                        <td>{money.format(charge.amount)}</td>
+                        <td>
+                          <div className="table-actions">
+                            <button
+                              type="button"
+                              className="icon-button danger"
+                              onClick={() => handleDeleteCharge(charge)}
+                              aria-label="Eliminar gasto"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </section>
