@@ -46,6 +46,7 @@ type CardCharge = {
   concept: string
   amount: number
   date: string
+  paid: boolean
 }
 
 type CardFormState = {
@@ -172,6 +173,10 @@ const normalizeCharges = (items: unknown[]): CardCharge[] => {
         'date' in item &&
         typeof item.date === 'string',
     )
+    .map((item) => ({
+      ...item,
+      paid: typeof item.paid === 'boolean' ? item.paid : false,
+    }))
     .sort((a, b) => b.date.localeCompare(a.date))
 }
 
@@ -495,10 +500,25 @@ const App = () => {
     }, {})
   }, [charges])
 
+  const unpaidCardChargesMap = useMemo(() => {
+    return charges.reduce<Record<string, CardCharge[]>>((acc, charge) => {
+      if (charge.paid) {
+        return acc
+      }
+
+      if (!acc[charge.cardId]) {
+        acc[charge.cardId] = []
+      }
+
+      acc[charge.cardId].push(charge)
+      return acc
+    }, {})
+  }, [charges])
+
   const cardSummaries = useMemo(() => {
     return cards.map((card) => {
-      const chargeTotal = (cardChargesMap[card.id] ?? []).reduce((sum, charge) => sum + charge.amount, 0)
-      const totalToPay = card.balance
+      const chargeTotal = (unpaidCardChargesMap[card.id] ?? []).reduce((sum, charge) => sum + charge.amount, 0)
+      const totalToPay = chargeTotal
       const dueDate = getDueDateForMonth(card, today)
       const nextDueDate = dueDate < new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12, 0, 0, 0)
         ? getDueDateForMonth(card, new Date(today.getFullYear(), today.getMonth() + 1, 1))
@@ -511,16 +531,18 @@ const App = () => {
         nextDueDate,
       }
     })
-  }, [cards, cardChargesMap])
+  }, [cards, unpaidCardChargesMap])
 
   const totals = useMemo(() => {
     const totalCharges = charges.reduce((sum, charge) => sum + charge.amount, 0)
-    const totalDebt = cardSummaries.reduce((sum, card) => sum + card.balance, 0)
-    const pendingCards = cardSummaries.filter((card) => card.balance > 0)
+    const totalChargesCount = charges.length
+    const totalDebt = cardSummaries.reduce((sum, card) => sum + card.totalToPay, 0)
+    const pendingCards = cardSummaries.filter((card) => card.totalToPay > 0)
     const nextPayment = [...pendingCards].sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime())[0]
 
     return {
       totalCharges,
+      totalChargesCount,
       totalDebt,
       nextPayment,
     }
@@ -546,7 +568,7 @@ const App = () => {
       }
 
       const dateText = toDateInput(dueDate)
-      const total = cardSummaries.find((item) => item.id === card.id)?.balance ?? card.balance
+      const total = cardSummaries.find((item) => item.id === card.id)?.totalToPay ?? 0
       if (total <= 0) {
         return
       }
@@ -634,7 +656,7 @@ const App = () => {
 
     return selectedPaymentEvent.cards.map((eventCard) => {
       const card = cards.find((item) => item.id === eventCard.id)
-      const relatedCharges = [...(cardChargesMap[eventCard.id] ?? [])].sort((a, b) => b.date.localeCompare(a.date))
+      const relatedCharges = [...(unpaidCardChargesMap[eventCard.id] ?? [])].sort((a, b) => b.date.localeCompare(a.date))
 
       return {
         id: eventCard.id,
@@ -644,7 +666,7 @@ const App = () => {
         charges: relatedCharges,
       }
     })
-  }, [cards, cardChargesMap, selectedPaymentEvent])
+  }, [cards, unpaidCardChargesMap, selectedPaymentEvent])
 
   const hasRelatedTransactions = (cardId: string) => {
     return (cardChargesMap[cardId]?.length ?? 0) > 0
@@ -839,6 +861,11 @@ const App = () => {
       return
     }
 
+    if (amount > targetCard.balance) {
+      window.alert('El monto del gasto supera el saldo disponible de la tarjeta seleccionada.')
+      return
+    }
+
     const currentUid = auth?.currentUser?.uid
     if (isCloudSyncEnabled && !currentUid) {
       window.alert('Tu sesion de Firebase no esta activa. Recarga la pagina e intenta de nuevo.')
@@ -855,9 +882,10 @@ const App = () => {
         concept,
         amount,
         date: chargeForm.date,
+        paid: false,
       }
 
-      const nextBalance = Math.max(0, targetCard.balance + amount)
+      const nextBalance = Math.max(0, targetCard.balance - amount)
 
       if (isCloudSyncEnabled && db) {
         try {
@@ -921,9 +949,13 @@ const App = () => {
       try {
         const batch = writeBatch(db)
         batch.delete(doc(db, 'charges', charge.id))
-        batch.update(doc(db, 'cards', charge.cardId), {
-          balance: Math.max(0, targetCard.balance - charge.amount),
-        })
+
+        if (!charge.paid) {
+          batch.update(doc(db, 'cards', charge.cardId), {
+            balance: Math.max(0, targetCard.balance + charge.amount),
+          })
+        }
+
         await batch.commit()
       } catch (error) {
         console.error('Error al eliminar gasto en Firestore:', error)
@@ -935,18 +967,28 @@ const App = () => {
     setCharges((current) => current.filter((item) => item.id !== charge.id))
     setCards((current) =>
       current.map((card) =>
-        card.id === charge.cardId ? { ...card, balance: Math.max(0, card.balance - charge.amount) } : card,
+        card.id === charge.cardId
+          ? { ...card, balance: charge.paid ? card.balance : Math.max(0, card.balance + charge.amount) }
+          : card,
       ),
     )
   }
 
   const handlePayCardBalance = async (cardId: string) => {
     const targetCard = cards.find((card) => card.id === cardId)
-    if (!targetCard || targetCard.balance <= 0) {
+    if (!targetCard) {
       return
     }
 
-    const confirmed = window.confirm(`¿Marcar como pagado el saldo de ${getCardDisplayName(targetCard)}?`)
+    const pendingCharges = charges.filter((charge) => charge.cardId === cardId && !charge.paid)
+    const totalPending = pendingCharges.reduce((sum, charge) => sum + charge.amount, 0)
+    if (totalPending <= 0) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      `¿Registrar pago de ${money.format(totalPending)} para ${getCardDisplayName(targetCard)}?`,
+    )
     if (!confirmed) {
       return
     }
@@ -956,7 +998,15 @@ const App = () => {
     try {
       if (isCloudSyncEnabled && db) {
         try {
-          await updateDoc(doc(db, 'cards', cardId), { balance: 0 })
+          const firestore = db
+          const batch = writeBatch(firestore)
+          batch.update(doc(firestore, 'cards', cardId), { balance: Math.max(0, targetCard.balance + totalPending) })
+
+          pendingCharges.forEach((charge) => {
+            batch.update(doc(firestore, 'charges', charge.id), { paid: true })
+          })
+
+          await batch.commit()
         } catch (error) {
           console.error('Error al registrar pago en Firestore:', error)
           window.alert('No se pudo registrar el pago en Firebase.')
@@ -964,8 +1014,21 @@ const App = () => {
         }
       }
 
+      const pendingIds = new Set(pendingCharges.map((charge) => charge.id))
       setCards((current) =>
-        current.map((card) => (card.id === cardId ? { ...card, balance: 0 } : card)),
+        current.map((card) =>
+          card.id === cardId ? { ...card, balance: Math.max(0, card.balance + totalPending) } : card,
+        ),
+      )
+      setCharges((current) =>
+        current.map((charge) =>
+          pendingIds.has(charge.id)
+            ? {
+                ...charge,
+                paid: true,
+              }
+            : charge,
+        ),
       )
     } finally {
       setActivePayingCardId(null)
@@ -1199,7 +1262,7 @@ const App = () => {
           </article>
           <article className="stat-card coral">
             <span><Banknote size={14} /> Cargos registrados</span>
-            <strong>{money.format(totals.totalCharges)}</strong>
+            <strong>{totals.totalChargesCount}</strong>
           </article>
           <article className="stat-card slate">
             <span><CalendarDays size={14} /> Próximo vencimiento</span>
@@ -1424,7 +1487,7 @@ const App = () => {
               </label>
 
               <label className="field">
-                <span>Saldo actual</span>
+                <span>Saldo disponible</span>
                 <input
                   type="number"
                   min="0"
@@ -1601,7 +1664,7 @@ const App = () => {
                     <thead>
                       <tr>
                         <th>Tarjeta</th>
-                        <th>Saldo</th>
+                        <th>Disponible</th>
                         <th>Corte</th>
                         <th>Pago</th>
                         <th>Estado</th>
