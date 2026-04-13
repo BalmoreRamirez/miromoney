@@ -72,10 +72,18 @@ type CalendarEvent = {
   cards: Array<{ id: string; label: string; amount: number }>
 }
 
+type CalendarCutoffEvent = {
+  dateText: string
+  cards: Array<{ id: string; label: string }>
+}
+
 type PaymentDayCardDetail = {
   id: string
   label: string
   amount: number
+  assignedBalance: number
+  availableBalance: number
+  netBalance: number
   paymentDay: number | null
   charges: CardCharge[]
 }
@@ -257,6 +265,18 @@ const getCardDisplayName = (card: CreditCardAccount) =>
 
 const getDueDateForMonth = (card: CreditCardAccount, monthDate: Date) =>
   toCalendarDate(monthDate.getFullYear(), monthDate.getMonth(), card.paymentDay)
+
+const getDueDateForCharge = (card: CreditCardAccount, chargeDateText: string) => {
+  const chargeDate = new Date(`${chargeDateText}T12:00:00`)
+  const chargeDay = chargeDate.getDate()
+
+  const closingMonth = chargeDay <= card.closingDay
+    ? new Date(chargeDate.getFullYear(), chargeDate.getMonth(), 1, 12, 0, 0, 0)
+    : new Date(chargeDate.getFullYear(), chargeDate.getMonth() + 1, 1, 12, 0, 0, 0)
+
+  const paymentMonth = new Date(closingMonth.getFullYear(), closingMonth.getMonth() + 1, 1, 12, 0, 0, 0)
+  return toCalendarDate(paymentMonth.getFullYear(), paymentMonth.getMonth(), card.paymentDay)
+}
 
 const buildCalendarMatrix = (monthDate: Date) => {
   const year = monthDate.getFullYear()
@@ -520,6 +540,28 @@ const App = () => {
     }, {})
   }, [charges])
 
+  const unpaidChargesWithDue = useMemo(() => {
+    return charges
+      .filter((charge) => !charge.paid)
+      .map((charge) => {
+        const card = cards.find((item) => item.id === charge.cardId)
+        if (!card) {
+          return null
+        }
+
+        const dueDate = getDueDateForCharge(card, charge.date)
+
+        return {
+          charge,
+          card,
+          dueDate,
+          dueDateText: toDateInput(dueDate),
+          dueMonthText: toMonthInput(dueDate),
+        }
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null)
+  }, [cards, charges])
+
   const cardSummaries = useMemo(() => {
     return cards.map((card) => {
       const chargeTotal = (unpaidCardChargesMap[card.id] ?? []).reduce((sum, charge) => sum + charge.amount, 0)
@@ -542,8 +584,8 @@ const App = () => {
     const totalCharges = charges.reduce((sum, charge) => sum + charge.amount, 0)
     const totalChargesCount = charges.length
     const totalDebt = cardSummaries.reduce((sum, card) => sum + card.totalToPay, 0)
-    const pendingCards = cardSummaries.filter((card) => card.totalToPay > 0)
-    const nextPayment = [...pendingCards].sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime())[0]
+    const nextPendingCharge = [...unpaidChargesWithDue].sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())[0]
+    const nextPayment = nextPendingCharge ? { nextDueDate: nextPendingCharge.dueDate } : null
 
     return {
       totalCharges,
@@ -551,7 +593,7 @@ const App = () => {
       totalDebt,
       nextPayment,
     }
-  }, [cardSummaries, charges])
+  }, [cardSummaries, charges, unpaidChargesWithDue])
 
   const selectedMonthDate = useMemo(() => {
     const [year, month] = selectedMonth.split('-').map(Number)
@@ -562,40 +604,68 @@ const App = () => {
   const calendarDays = useMemo(() => buildCalendarMatrix(selectedMonthDate), [selectedMonthDate])
 
   const paymentEvents = useMemo<CalendarEvent[]>(() => {
-    const year = selectedMonthDate.getFullYear()
-    const monthIndex = selectedMonthDate.getMonth()
+    const selectedMonthText = toMonthInput(selectedMonthDate)
     const byDate = new Map<string, CalendarEvent>()
 
-    cards.forEach((card) => {
-      const dueDate = toCalendarDate(year, monthIndex, card.paymentDay)
-      if (dueDate.getMonth() !== monthIndex) {
+    unpaidChargesWithDue.forEach((entry) => {
+      if (entry.dueMonthText !== selectedMonthText) {
         return
       }
 
-      const dateText = toDateInput(dueDate)
-      const total = cardSummaries.find((item) => item.id === card.id)?.totalToPay ?? 0
-      if (total <= 0) {
-        return
-      }
-
-      const label = getCardDisplayName(card)
+      const dateText = entry.dueDateText
+      const label = getCardDisplayName(entry.card)
+      const amount = entry.charge.amount
 
       const existing = byDate.get(dateText)
       if (existing) {
-        existing.total += total
-        existing.cards.push({ id: card.id, label, amount: total })
+        existing.total += amount
+        const existingCard = existing.cards.find((cardItem) => cardItem.id === entry.card.id)
+        if (existingCard) {
+          existingCard.amount += amount
+        } else {
+          existing.cards.push({ id: entry.card.id, label, amount })
+        }
         return
       }
 
       byDate.set(dateText, {
         dateText,
-        total,
-        cards: [{ id: card.id, label, amount: total }],
+        total: amount,
+        cards: [{ id: entry.card.id, label, amount }],
       })
     })
 
     return Array.from(byDate.values()).sort((a, b) => a.dateText.localeCompare(b.dateText))
-  }, [cardSummaries, cards, selectedMonthDate])
+  }, [selectedMonthDate, unpaidChargesWithDue])
+
+  const cutoffEvents = useMemo<CalendarCutoffEvent[]>(() => {
+    const year = selectedMonthDate.getFullYear()
+    const monthIndex = selectedMonthDate.getMonth()
+    const byDate = new Map<string, CalendarCutoffEvent>()
+
+    cards.forEach((card) => {
+      const cutoffDate = toCalendarDate(year, monthIndex, card.closingDay)
+      if (cutoffDate.getMonth() !== monthIndex) {
+        return
+      }
+
+      const dateText = toDateInput(cutoffDate)
+      const label = getCardDisplayName(card)
+      const existing = byDate.get(dateText)
+
+      if (existing) {
+        existing.cards.push({ id: card.id, label })
+        return
+      }
+
+      byDate.set(dateText, {
+        dateText,
+        cards: [{ id: card.id, label }],
+      })
+    })
+
+    return Array.from(byDate.values()).sort((a, b) => a.dateText.localeCompare(b.dateText))
+  }, [cards, selectedMonthDate])
 
   const recentCharges = useMemo(() => {
     return [...charges]
@@ -628,19 +698,17 @@ const App = () => {
   }, [filteredRecentCharges])
 
   const monthlyCardPayments = useMemo(() => {
-    const year = selectedMonthDate.getFullYear()
-    const monthIndex = selectedMonthDate.getMonth()
-
-    return cardSummaries
-      .map((card) => ({
-        id: card.id,
-        label: getCardDisplayName(card),
-        amount: card.chargeTotal,
-        dueDate: toCalendarDate(year, monthIndex, card.paymentDay),
-      }))
-      .filter((item) => item.amount > 0)
+    return paymentEvents
+      .flatMap((event) =>
+        event.cards.map((card) => ({
+          id: card.id,
+          label: card.label,
+          amount: card.amount,
+          dueDate: new Date(`${event.dateText}T12:00:00`),
+        })),
+      )
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-  }, [cardSummaries, selectedMonthDate])
+  }, [paymentEvents])
 
   const monthlyPaymentsTotal = useMemo(() => {
     return monthlyCardPayments.reduce((sum, item) => sum + item.amount, 0)
@@ -661,17 +729,25 @@ const App = () => {
 
     return selectedPaymentEvent.cards.map((eventCard) => {
       const card = cards.find((item) => item.id === eventCard.id)
-      const relatedCharges = [...(unpaidCardChargesMap[eventCard.id] ?? [])].sort((a, b) => b.date.localeCompare(a.date))
+      const relatedCharges = unpaidChargesWithDue
+        .filter((entry) => entry.card.id === eventCard.id && entry.dueDateText === selectedPaymentEvent.dateText)
+        .map((entry) => entry.charge)
+        .sort((a, b) => b.date.localeCompare(a.date))
+      const availableBalance = card?.balance ?? 0
+      const assignedBalance = availableBalance + eventCard.amount
 
       return {
         id: eventCard.id,
         label: eventCard.label,
         amount: eventCard.amount,
+        assignedBalance,
+        availableBalance,
+        netBalance: assignedBalance - eventCard.amount,
         paymentDay: card?.paymentDay ?? null,
         charges: relatedCharges,
       }
     })
-  }, [cards, unpaidCardChargesMap, selectedPaymentEvent])
+  }, [cards, unpaidChargesWithDue, selectedPaymentEvent])
 
   const hasRelatedTransactions = (cardId: string) => {
     return (cardChargesMap[cardId]?.length ?? 0) > 0
@@ -979,13 +1055,25 @@ const App = () => {
     )
   }
 
-  const handlePayCardBalance = async (cardId: string) => {
+  const handlePayCardBalance = async (cardId: string, dueDateText?: string) => {
     const targetCard = cards.find((card) => card.id === cardId)
     if (!targetCard) {
       return
     }
 
-    const pendingCharges = charges.filter((charge) => charge.cardId === cardId && !charge.paid)
+    const pendingCharges = charges.filter((charge) => {
+      if (charge.cardId !== cardId || charge.paid) {
+        return false
+      }
+
+      if (!dueDateText) {
+        return true
+      }
+
+      const chargeDueDate = toDateInput(getDueDateForCharge(targetCard, charge.date))
+      return chargeDueDate === dueDateText
+    })
+
     const totalPending = pendingCharges.reduce((sum, charge) => sum + charge.amount, 0)
     if (totalPending <= 0) {
       return
@@ -1324,6 +1412,7 @@ const App = () => {
 
                   const dateText = toDateInput(day)
                   const eventsForDay = paymentEvents.find((event) => event.dateText === dateText)
+                  const cutoffForDay = cutoffEvents.find((event) => event.dateText === dateText)
                   const isToday = dateText === toDateInput(today)
 
                   return (
@@ -1331,6 +1420,15 @@ const App = () => {
                       <div className="calendar-day-head">
                         <span className={`calendar-day-number${isToday ? ' today' : ''}`}>{day.getDate()}</span>
                       </div>
+                      {cutoffForDay ? (
+                        <div
+                          className="calendar-cutoff"
+                          title={cutoffForDay.cards.map((card) => card.label).join(', ')}
+                        >
+                          <strong>Corte</strong>
+                          <small>{cutoffForDay.cards.length} tarjeta{cutoffForDay.cards.length === 1 ? '' : 's'}</small>
+                        </div>
+                      ) : null}
                       {eventsForDay ? (
                         <button
                           type="button"
@@ -1433,13 +1531,28 @@ const App = () => {
                         type="button"
                         className="primary-button"
                         onClick={() => {
-                          void handlePayCardBalance(paymentCard.id)
+                          void handlePayCardBalance(paymentCard.id, selectedPaymentEvent.dateText)
                         }}
                         disabled={paymentCard.amount <= 0 || activePayingCardId === paymentCard.id}
                       >
                         {activePayingCardId === paymentCard.id ? 'Pagando...' : 'Pagar tarjeta'}
                       </button>
                     </div>
+                  </div>
+
+                  <div className="payment-balance-row">
+                    <article>
+                      <span>Saldo asignado</span>
+                      <strong>{money.format(paymentCard.assignedBalance)}</strong>
+                    </article>
+                    <article>
+                      <span>Deuda pendiente</span>
+                      <strong>{money.format(paymentCard.amount)}</strong>
+                    </article>
+                    <article>
+                      <span>Saldo - deuda</span>
+                      <strong>{money.format(paymentCard.netBalance)}</strong>
+                    </article>
                   </div>
 
                   {paymentCard.charges.length === 0 ? (

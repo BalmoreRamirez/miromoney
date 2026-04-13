@@ -822,6 +822,26 @@
   text-transform: uppercase;
 }
 
+.calendar-cutoff {
+  padding: 5px 8px;
+  border-radius: 10px;
+  border: 1px solid rgba(49, 53, 72, 0.28);
+  background: rgba(49, 53, 72, 0.08);
+  display: grid;
+  gap: 1px;
+}
+
+.calendar-cutoff strong {
+  font-size: 0.72rem;
+  line-height: 1.1;
+}
+
+.calendar-cutoff small {
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.1;
+}
+
 .calendar-event {
   margin-top: auto;
   padding: 6px 8px;
@@ -1056,6 +1076,31 @@
   font-size: 1.2rem;
 }
 
+.payment-balance-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.payment-balance-row article {
+  border: 1px solid rgba(49, 53, 72, 0.2);
+  border-radius: 12px;
+  background: rgba(126, 92, 229, 0.07);
+  padding: 10px;
+}
+
+.payment-balance-row span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.payment-balance-row strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1rem;
+}
+
 .detail-charge-item {
   display: flex;
   justify-content: space-between;
@@ -1278,6 +1323,11 @@
   background: rgba(122, 162, 255, 0.2);
 }
 
+:root[data-theme='dark'] .calendar-cutoff {
+  border-color: rgba(143, 152, 188, 0.4);
+  background: rgba(143, 152, 188, 0.14);
+}
+
 :root[data-theme='dark'] .calendar-today-pill {
   border-color: rgba(122, 162, 255, 0.5);
   background: rgba(122, 162, 255, 0.22);
@@ -1294,6 +1344,11 @@
 :root[data-theme='dark'] .detail-charge-item {
   border-color: rgba(143, 152, 188, 0.38);
   background: #212c45;
+}
+
+:root[data-theme='dark'] .payment-balance-row article {
+  border-color: rgba(143, 152, 188, 0.34);
+  background: rgba(122, 162, 255, 0.14);
 }
 
 :root[data-theme='dark'] .detail-card.highlight {
@@ -1459,6 +1514,10 @@
   }
 
   .detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .payment-balance-row {
     grid-template-columns: 1fr;
   }
 
