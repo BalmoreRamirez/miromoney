@@ -2,7 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
 import {
-  ArrowLeftRight,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  query,
+  setDoc,
+  updateDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore'
+import { signInWithEmailAndPassword } from 'firebase/auth'
+import {
   Banknote,
   CalendarDays,
   CreditCard,
@@ -13,9 +24,11 @@ import {
   X,
   Wallet,
 } from 'lucide-react'
+import { auth, db } from './lib/firebase'
 
 type CreditCardAccount = {
   id: string
+  ownerUid?: string
   bankName: string
   nickname: string
   balance: number
@@ -26,6 +39,7 @@ type CreditCardAccount = {
 
 type CardCharge = {
   id: string
+  ownerUid?: string
   cardId: string
   concept: string
   amount: number
@@ -53,6 +67,16 @@ type CalendarEvent = {
   cards: Array<{ id: string; label: string; amount: number }>
 }
 
+type PaymentDayCardDetail = {
+  id: string
+  label: string
+  amount: number
+  paymentDay: number | null
+  charges: CardCharge[]
+}
+
+type SyncState = 'syncing' | 'cloud' | 'local'
+
 const today = new Date()
 
 const STORAGE_KEYS = {
@@ -73,6 +97,8 @@ const monthFormatter = new Intl.DateTimeFormat('es-CO', {
 })
 
 const weekdayLabels = ['Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb', 'Dom']
+const defaultLoginEmail = import.meta.env.VITE_DEFAULT_LOGIN_EMAIL?.trim()
+const defaultLoginPassword = import.meta.env.VITE_DEFAULT_LOGIN_PASSWORD?.trim()
 
 const toDateInput = (date: Date) => {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000)
@@ -99,6 +125,64 @@ const parseSavedArray = <T,>(raw: string | null): T[] => {
   }
 }
 
+const normalizeCards = (items: unknown[]): CreditCardAccount[] => {
+  return items
+    .filter(
+      (item): item is CreditCardAccount =>
+        typeof item === 'object' &&
+        item !== null &&
+        'id' in item &&
+        typeof item.id === 'string' &&
+        'bankName' in item &&
+        typeof item.bankName === 'string' &&
+        'nickname' in item &&
+        typeof item.nickname === 'string' &&
+        'balance' in item &&
+        typeof item.balance === 'number' &&
+        Number.isFinite(item.balance) &&
+        'closingDay' in item &&
+        Number.isInteger(item.closingDay) &&
+        'paymentDay' in item &&
+        Number.isInteger(item.paymentDay) &&
+        'createdAt' in item &&
+        typeof item.createdAt === 'string',
+    )
+    .map((item) => ({
+      ...item,
+      closingDay: Math.min(31, Math.max(1, item.closingDay)),
+      paymentDay: Math.min(31, Math.max(1, item.paymentDay)),
+    }))
+}
+
+const normalizeCharges = (items: unknown[]): CardCharge[] => {
+  return items
+    .filter(
+      (item): item is CardCharge =>
+        typeof item === 'object' &&
+        item !== null &&
+        'id' in item &&
+        typeof item.id === 'string' &&
+        'cardId' in item &&
+        typeof item.cardId === 'string' &&
+        'concept' in item &&
+        typeof item.concept === 'string' &&
+        'amount' in item &&
+        typeof item.amount === 'number' &&
+        Number.isFinite(item.amount) &&
+        'date' in item &&
+        typeof item.date === 'string',
+    )
+    .sort((a, b) => b.date.localeCompare(a.date))
+}
+
+const getFirebaseErrorCode = (error: unknown) => {
+  if (typeof error === 'object' && error !== null && 'code' in error) {
+    return String((error as { code?: unknown }).code ?? 'unknown')
+  }
+
+  return 'unknown'
+}
+
 const generateId = () => {
   if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
     return crypto.randomUUID()
@@ -111,6 +195,13 @@ const formatDueLabel = (date: Date) =>
   date.toLocaleDateString('es-CO', {
     day: 'numeric',
     month: 'short',
+  })
+
+const formatLongDate = (dateText: string) =>
+  new Date(`${dateText}T12:00:00`).toLocaleDateString('es-CO', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
   })
 
 const initialCardForm = (): CardFormState => ({
@@ -129,41 +220,13 @@ const initialChargeForm = (cards: CreditCardAccount[]): ChargeFormState => ({
 })
 
 const loadCards = (): CreditCardAccount[] => {
-  const saved = parseSavedArray<CreditCardAccount>(window.localStorage.getItem(STORAGE_KEYS.cards))
-
-  return saved
-    .filter(
-      (item) =>
-        typeof item.id === 'string' &&
-        typeof item.bankName === 'string' &&
-        typeof item.nickname === 'string' &&
-        typeof item.balance === 'number' &&
-        Number.isFinite(item.balance) &&
-        Number.isInteger(item.closingDay) &&
-        Number.isInteger(item.paymentDay) &&
-        typeof item.createdAt === 'string',
-    )
-    .map((item) => ({
-      ...item,
-      closingDay: Math.min(31, Math.max(1, item.closingDay)),
-      paymentDay: Math.min(31, Math.max(1, item.paymentDay)),
-    }))
+  const saved = parseSavedArray<unknown>(window.localStorage.getItem(STORAGE_KEYS.cards))
+  return normalizeCards(saved)
 }
 
 const loadCharges = (): CardCharge[] => {
-  const saved = parseSavedArray<CardCharge>(window.localStorage.getItem(STORAGE_KEYS.charges))
-
-  return saved
-    .filter(
-      (item) =>
-        typeof item.id === 'string' &&
-        typeof item.cardId === 'string' &&
-        typeof item.concept === 'string' &&
-        typeof item.amount === 'number' &&
-        Number.isFinite(item.amount) &&
-        typeof item.date === 'string',
-    )
-    .sort((a, b) => b.date.localeCompare(a.date))
+  const saved = parseSavedArray<unknown>(window.localStorage.getItem(STORAGE_KEYS.charges))
+  return normalizeCharges(saved)
 }
 
 const getCardDisplayName = (card: CreditCardAccount) =>
@@ -195,17 +258,165 @@ const buildCalendarMatrix = (monthDate: Date) => {
 const App = () => {
   const [cards, setCards] = useState<CreditCardAccount[]>(() => loadCards())
   const [charges, setCharges] = useState<CardCharge[]>(() => loadCharges())
+  const [isCloudSyncEnabled, setIsCloudSyncEnabled] = useState(false)
+  const [syncState, setSyncState] = useState<SyncState>(db ? 'syncing' : 'local')
   const [editingCardId, setEditingCardId] = useState<string | null>(null)
   const [isCardModalOpen, setIsCardModalOpen] = useState(false)
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
   const [isPurchasesModalOpen, setIsPurchasesModalOpen] = useState(false)
   const [isManageCardsModalOpen, setIsManageCardsModalOpen] = useState(false)
+  const [selectedPaymentDateText, setSelectedPaymentDateText] = useState<string | null>(null)
+  const [isSavingCard, setIsSavingCard] = useState(false)
+  const [isSavingCharge, setIsSavingCharge] = useState(false)
+  const [activePayingCardId, setActivePayingCardId] = useState<string | null>(null)
+  const [purchaseSearch, setPurchaseSearch] = useState('')
   const [cardForm, setCardForm] = useState<CardFormState>(() => initialCardForm())
   const [chargeForm, setChargeForm] = useState<ChargeFormState>(() => initialChargeForm(loadCards()))
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const saved = window.localStorage.getItem(STORAGE_KEYS.month)
     return saved && /^\d{4}-\d{2}$/.test(saved) ? saved : toMonthInput(today)
   })
+  const isAnyModalOpen =
+    isCardModalOpen ||
+    isChargeModalOpen ||
+    isPurchasesModalOpen ||
+    isManageCardsModalOpen ||
+    selectedPaymentDateText !== null
+
+  useEffect(() => {
+    const loadFromFirebase = async () => {
+      setSyncState(db ? 'syncing' : 'local')
+
+      if (!db) {
+        setIsCloudSyncEnabled(false)
+        setSyncState('local')
+        return
+      }
+
+      if (auth && !auth.currentUser) {
+        if (!defaultLoginEmail || !defaultLoginPassword) {
+          console.warn(
+            'Firebase Auth no inicializado: faltan VITE_DEFAULT_LOGIN_EMAIL o VITE_DEFAULT_LOGIN_PASSWORD. Se mantiene modo local.',
+          )
+          setIsCloudSyncEnabled(false)
+          setSyncState('local')
+          return
+        }
+
+        try {
+          await signInWithEmailAndPassword(auth, defaultLoginEmail, defaultLoginPassword)
+        } catch (error) {
+          const code = getFirebaseErrorCode(error)
+          console.error(
+            `No se pudo autenticar en Firebase (${code}). Se mantiene modo local.`,
+            error,
+          )
+          setIsCloudSyncEnabled(false)
+          setSyncState('local')
+          return
+        }
+      }
+
+      try {
+        const currentUid = auth?.currentUser?.uid
+        if (!currentUid) {
+          console.error('No hay usuario autenticado en Firebase para cargar Firestore.')
+          return
+        }
+
+        const [cardsSnapshot, chargesSnapshot] = await Promise.all([
+          getDocs(query(collection(db, 'cards'), where('ownerUid', '==', currentUid))),
+          getDocs(query(collection(db, 'charges'), where('ownerUid', '==', currentUid))),
+        ])
+
+        const remoteCards = normalizeCards(
+          cardsSnapshot.docs.map((snapshot) => ({
+            id: snapshot.id,
+            ...snapshot.data(),
+          })),
+        )
+
+        const remoteCharges = normalizeCharges(
+          chargesSnapshot.docs.map((snapshot) => ({
+            id: snapshot.id,
+            ...snapshot.data(),
+          })),
+        )
+
+        setCards(remoteCards)
+        setCharges(remoteCharges)
+        setIsCloudSyncEnabled(true)
+        setSyncState('cloud')
+      } catch (error) {
+        const code = getFirebaseErrorCode(error)
+        if (code === 'permission-denied') {
+          console.error(
+            'Firestore sin permisos para cards/charges (permission-denied). Revisa Rules publicadas para usuarios autenticados.',
+            error,
+          )
+          setIsCloudSyncEnabled(false)
+          setSyncState('local')
+          return
+        }
+
+        console.error(`No se pudo cargar Firestore (${code}), se mantiene modo local.`, error)
+        setIsCloudSyncEnabled(false)
+        setSyncState('local')
+      }
+    }
+
+    void loadFromFirebase()
+  }, [])
+
+  useEffect(() => {
+    if (!isAnyModalOpen) {
+      return
+    }
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') {
+        return
+      }
+
+      if (selectedPaymentDateText) {
+        setSelectedPaymentDateText(null)
+        return
+      }
+
+      if (isPurchasesModalOpen) {
+        setPurchaseSearch('')
+        setIsPurchasesModalOpen(false)
+        return
+      }
+
+      if (isManageCardsModalOpen) {
+        setIsManageCardsModalOpen(false)
+        return
+      }
+
+      if (isChargeModalOpen) {
+        setIsChargeModalOpen(false)
+        setChargeForm(initialChargeForm(cards))
+        return
+      }
+
+      if (isCardModalOpen) {
+        setIsCardModalOpen(false)
+        setEditingCardId(null)
+        setCardForm(initialCardForm())
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      document.body.style.overflow = previousOverflow
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [isAnyModalOpen, selectedPaymentDateText, isPurchasesModalOpen, isManageCardsModalOpen, isChargeModalOpen, isCardModalOpen, cards])
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards))
@@ -265,7 +476,8 @@ const App = () => {
   const totals = useMemo(() => {
     const totalCharges = charges.reduce((sum, charge) => sum + charge.amount, 0)
     const totalDebt = cardSummaries.reduce((sum, card) => sum + card.balance, 0)
-    const nextPayment = [...cardSummaries].sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime())[0]
+    const pendingCards = cardSummaries.filter((card) => card.balance > 0)
+    const nextPayment = [...pendingCards].sort((a, b) => a.nextDueDate.getTime() - b.nextDueDate.getTime())[0]
 
     return {
       totalCharges,
@@ -295,6 +507,10 @@ const App = () => {
 
       const dateText = toDateInput(dueDate)
       const total = cardSummaries.find((item) => item.id === card.id)?.balance ?? card.balance
+      if (total <= 0) {
+        return
+      }
+
       const label = getCardDisplayName(card)
 
       const existing = byDate.get(dateText)
@@ -327,6 +543,23 @@ const App = () => {
       })
   }, [cards, charges])
 
+  const filteredRecentCharges = useMemo(() => {
+    const searchTerm = purchaseSearch.trim().toLowerCase()
+    if (!searchTerm) {
+      return recentCharges
+    }
+
+    return recentCharges.filter((charge) =>
+      charge.concept.toLowerCase().includes(searchTerm) ||
+      charge.cardLabel.toLowerCase().includes(searchTerm) ||
+      charge.date.includes(searchTerm),
+    )
+  }, [recentCharges, purchaseSearch])
+
+  const filteredChargesTotal = useMemo(() => {
+    return filteredRecentCharges.reduce((sum, charge) => sum + charge.amount, 0)
+  }, [filteredRecentCharges])
+
   const monthlyCardPayments = useMemo(() => {
     const year = selectedMonthDate.getFullYear()
     const monthIndex = selectedMonthDate.getMonth()
@@ -335,15 +568,43 @@ const App = () => {
       .map((card) => ({
         id: card.id,
         label: getCardDisplayName(card),
-        amount: card.balance,
+        amount: card.chargeTotal,
         dueDate: toCalendarDate(year, monthIndex, card.paymentDay),
       }))
+      .filter((item) => item.amount > 0)
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
   }, [cardSummaries, selectedMonthDate])
 
   const monthlyPaymentsTotal = useMemo(() => {
     return monthlyCardPayments.reduce((sum, item) => sum + item.amount, 0)
   }, [monthlyCardPayments])
+
+  const selectedPaymentEvent = useMemo(() => {
+    if (!selectedPaymentDateText) {
+      return null
+    }
+
+    return paymentEvents.find((event) => event.dateText === selectedPaymentDateText) ?? null
+  }, [paymentEvents, selectedPaymentDateText])
+
+  const selectedPaymentCards = useMemo<PaymentDayCardDetail[]>(() => {
+    if (!selectedPaymentEvent) {
+      return []
+    }
+
+    return selectedPaymentEvent.cards.map((eventCard) => {
+      const card = cards.find((item) => item.id === eventCard.id)
+      const relatedCharges = [...(cardChargesMap[eventCard.id] ?? [])].sort((a, b) => b.date.localeCompare(a.date))
+
+      return {
+        id: eventCard.id,
+        label: eventCard.label,
+        amount: eventCard.amount,
+        paymentDay: card?.paymentDay ?? null,
+        charges: relatedCharges,
+      }
+    })
+  }, [cards, cardChargesMap, selectedPaymentEvent])
 
   const hasRelatedTransactions = (cardId: string) => {
     return (cardChargesMap[cardId]?.length ?? 0) > 0
@@ -387,6 +648,7 @@ const App = () => {
   }
 
   const openPurchasesModal = () => {
+    setPurchaseSearch('')
     setIsPurchasesModalOpen(true)
   }
 
@@ -396,6 +658,7 @@ const App = () => {
   }
 
   const closePurchasesModal = () => {
+    setPurchaseSearch('')
     setIsPurchasesModalOpen(false)
   }
 
@@ -407,8 +670,20 @@ const App = () => {
     setIsManageCardsModalOpen(false)
   }
 
-  const handleCardSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const openPaymentDetailModal = (dateText: string) => {
+    setSelectedPaymentDateText(dateText)
+  }
+
+  const closePaymentDetailModal = () => {
+    setSelectedPaymentDateText(null)
+  }
+
+  const handleCardSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (isSavingCard) {
+      return
+    }
 
     const bankName = cardForm.bankName.trim()
     const nickname = cardForm.nickname.trim()
@@ -430,41 +705,84 @@ const App = () => {
       return
     }
 
-    if (editingCardId) {
-      setCards((current) =>
-        current.map((card) =>
-          card.id === editingCardId
-            ? {
-                ...card,
-                bankName,
-                nickname,
-                balance,
-                closingDay,
-                paymentDay,
-              }
-            : card,
-        ),
-      )
-    } else {
-      const newCard: CreditCardAccount = {
-        id: generateId(),
-        bankName,
-        nickname,
-        balance,
-        closingDay,
-        paymentDay,
-        createdAt: new Date().toISOString(),
+    setIsSavingCard(true)
+
+    try {
+      if (editingCardId) {
+        if (isCloudSyncEnabled && db) {
+          try {
+            await updateDoc(doc(db, 'cards', editingCardId), {
+              bankName,
+              nickname,
+              balance,
+              closingDay,
+              paymentDay,
+            })
+          } catch (error) {
+            console.error('Error al actualizar tarjeta en Firestore:', error)
+            window.alert('No se pudo actualizar la tarjeta en Firebase.')
+            return
+          }
+        }
+
+        setCards((current) =>
+          current.map((card) =>
+            card.id === editingCardId
+              ? {
+                  ...card,
+                  bankName,
+                  nickname,
+                  balance,
+                  closingDay,
+                  paymentDay,
+                }
+              : card,
+          ),
+        )
+      } else {
+        const currentUid = auth?.currentUser?.uid
+        if (isCloudSyncEnabled && !currentUid) {
+          window.alert('Tu sesion de Firebase no esta activa. Recarga la pagina e intenta de nuevo.')
+          return
+        }
+
+        const newCard: CreditCardAccount = {
+          id: generateId(),
+          ownerUid: currentUid,
+          bankName,
+          nickname,
+          balance,
+          closingDay,
+          paymentDay,
+          createdAt: new Date().toISOString(),
+        }
+
+        if (isCloudSyncEnabled && db) {
+          try {
+            await setDoc(doc(db, 'cards', newCard.id), newCard)
+          } catch (error) {
+            console.error('Error al guardar tarjeta en Firestore:', error)
+            window.alert('No se pudo guardar la tarjeta en Firebase.')
+            return
+          }
+        }
+
+        setCards((current) => [newCard, ...current])
+        setChargeForm((current) => ({ ...current, cardId: current.cardId || newCard.id }))
       }
 
-      setCards((current) => [newCard, ...current])
-      setChargeForm((current) => ({ ...current, cardId: current.cardId || newCard.id }))
+      closeCardModal()
+    } finally {
+      setIsSavingCard(false)
     }
-
-    closeCardModal()
   }
 
-  const handleChargeSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleChargeSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+
+    if (isSavingCharge) {
+      return
+    }
 
     const cardId = chargeForm.cardId
     const concept = chargeForm.concept.trim()
@@ -481,25 +799,53 @@ const App = () => {
       return
     }
 
-    const newCharge: CardCharge = {
-      id: generateId(),
-      cardId,
-      concept,
-      amount,
-      date: chargeForm.date,
+    const currentUid = auth?.currentUser?.uid
+    if (isCloudSyncEnabled && !currentUid) {
+      window.alert('Tu sesion de Firebase no esta activa. Recarga la pagina e intenta de nuevo.')
+      return
     }
 
-    setCharges((current) => [newCharge, ...current])
-    setCards((current) =>
-      current.map((card) =>
-        card.id === cardId ? { ...card, balance: Math.max(0, card.balance + amount) } : card,
-      ),
-    )
+    setIsSavingCharge(true)
 
-    closeChargeModal()
+    try {
+      const newCharge: CardCharge = {
+        id: generateId(),
+        ownerUid: currentUid,
+        cardId,
+        concept,
+        amount,
+        date: chargeForm.date,
+      }
+
+      const nextBalance = Math.max(0, targetCard.balance + amount)
+
+      if (isCloudSyncEnabled && db) {
+        try {
+          const batch = writeBatch(db)
+          batch.set(doc(db, 'charges', newCharge.id), newCharge)
+          batch.update(doc(db, 'cards', cardId), { balance: nextBalance })
+          await batch.commit()
+        } catch (error) {
+          console.error('Error al guardar gasto en Firestore:', error)
+          window.alert('No se pudo guardar el gasto en Firebase.')
+          return
+        }
+      }
+
+      setCharges((current) => [newCharge, ...current])
+      setCards((current) =>
+        current.map((card) =>
+          card.id === cardId ? { ...card, balance: nextBalance } : card,
+        ),
+      )
+
+      closeChargeModal()
+    } finally {
+      setIsSavingCharge(false)
+    }
   }
 
-  const handleDeleteCard = (card: CreditCardAccount) => {
+  const handleDeleteCard = async (card: CreditCardAccount) => {
     if (hasRelatedTransactions(card.id)) {
       window.alert('No puedes eliminar una tarjeta que tiene transacciones relacionadas.')
       return
@@ -510,14 +856,40 @@ const App = () => {
       return
     }
 
+    if (isCloudSyncEnabled && db) {
+      try {
+        await deleteDoc(doc(db, 'cards', card.id))
+      } catch (error) {
+        console.error('Error al eliminar tarjeta en Firestore:', error)
+        window.alert('No se pudo eliminar la tarjeta en Firebase.')
+        return
+      }
+    }
+
     setCards((current) => current.filter((item) => item.id !== card.id))
     setCharges((current) => current.filter((charge) => charge.cardId !== card.id))
   }
 
-  const handleDeleteCharge = (charge: CardCharge) => {
+  const handleDeleteCharge = async (charge: CardCharge) => {
     const confirmed = window.confirm(`¿Eliminar el gasto "${charge.concept}"?`)
     if (!confirmed) {
       return
+    }
+
+    const targetCard = cards.find((card) => card.id === charge.cardId)
+    if (isCloudSyncEnabled && db && targetCard) {
+      try {
+        const batch = writeBatch(db)
+        batch.delete(doc(db, 'charges', charge.id))
+        batch.update(doc(db, 'cards', charge.cardId), {
+          balance: Math.max(0, targetCard.balance - charge.amount),
+        })
+        await batch.commit()
+      } catch (error) {
+        console.error('Error al eliminar gasto en Firestore:', error)
+        window.alert('No se pudo eliminar el gasto en Firebase.')
+        return
+      }
     }
 
     setCharges((current) => current.filter((item) => item.id !== charge.id))
@@ -526,6 +898,38 @@ const App = () => {
         card.id === charge.cardId ? { ...card, balance: Math.max(0, card.balance - charge.amount) } : card,
       ),
     )
+  }
+
+  const handlePayCardBalance = async (cardId: string) => {
+    const targetCard = cards.find((card) => card.id === cardId)
+    if (!targetCard || targetCard.balance <= 0) {
+      return
+    }
+
+    const confirmed = window.confirm(`¿Marcar como pagado el saldo de ${getCardDisplayName(targetCard)}?`)
+    if (!confirmed) {
+      return
+    }
+
+    setActivePayingCardId(cardId)
+
+    try {
+      if (isCloudSyncEnabled && db) {
+        try {
+          await updateDoc(doc(db, 'cards', cardId), { balance: 0 })
+        } catch (error) {
+          console.error('Error al registrar pago en Firestore:', error)
+          window.alert('No se pudo registrar el pago en Firebase.')
+          return
+        }
+      }
+
+      setCards((current) =>
+        current.map((card) => (card.id === cardId ? { ...card, balance: 0 } : card)),
+      )
+    } finally {
+      setActivePayingCardId(null)
+    }
   }
 
   const shiftMonth = (delta: number) => {
@@ -544,6 +948,13 @@ const App = () => {
             <p className="hero-copy">
               Controla tus tarjetas de crédito, registra cada compra o gasto, y visualiza
               tus pagos próximos en un calendario claro.
+            </p>
+            <p className={`sync-indicator ${syncState}`}>
+              {syncState === 'cloud'
+                ? 'Sincronizado con Firebase'
+                : syncState === 'syncing'
+                  ? 'Sincronizando con Firebase...'
+                  : 'Modo local activo'}
             </p>
           </div>
 
@@ -628,10 +1039,14 @@ const App = () => {
                     <div key={dateText} className={`calendar-cell${isToday ? ' today' : ''}`}>
                       <span className="calendar-day-number">{day.getDate()}</span>
                       {eventsForDay ? (
-                        <div className="calendar-event">
+                        <button
+                          type="button"
+                          className="calendar-event calendar-event-button"
+                          onClick={() => openPaymentDetailModal(eventsForDay.dateText)}
+                        >
                           <strong>{money.format(eventsForDay.total)}</strong>
                           <small>{eventsForDay.cards.length} pago{eventsForDay.cards.length === 1 ? '' : 's'}</small>
-                        </div>
+                        </button>
                       ) : null}
                     </div>
                   )
@@ -644,8 +1059,8 @@ const App = () => {
             <section className="panel">
               <div className="section-head">
                 <div>
-                  <p className="eyebrow">Pagos del mes</p>
-                  <h2>Pagos por tarjeta</h2>
+                  <p className="eyebrow">Resumen de gastos</p>
+                  <h2>Gastos por tarjeta</h2>
                 </div>
                 <span className="section-badge">{money.format(monthlyPaymentsTotal)}</span>
               </div>
@@ -653,21 +1068,26 @@ const App = () => {
               {monthlyCardPayments.length === 0 ? (
                 <div className="empty-state compact">
                   <CalendarDays size={28} />
-                  <p>No hay tarjetas registradas para calcular pagos del mes.</p>
+                  <p>No hay gastos registrados para mostrar en este resumen.</p>
                 </div>
               ) : (
                 <div className="monthly-payments-list">
                   {monthlyCardPayments.map((payment) => (
-                    <article className="monthly-payment-item" key={payment.id}>
+                    <button
+                      type="button"
+                      className="monthly-payment-item interactive"
+                      key={payment.id}
+                      onClick={() => openPaymentDetailModal(toDateInput(payment.dueDate))}
+                    >
                       <div>
                         <p className="movement-meta">{payment.label}</p>
                         <h3>{money.format(payment.amount)}</h3>
-                        <span>Pago: {toDateInput(payment.dueDate)}</span>
+                        <span>Vence: {toDateInput(payment.dueDate)}</span>
                       </div>
                       <div className="charge-right">
                         <strong>Día {payment.dueDate.getDate()}</strong>
                       </div>
-                    </article>
+                    </button>
                   ))}
                 </div>
               )}
@@ -675,6 +1095,92 @@ const App = () => {
           </aside>
         </section>
       </main>
+
+      {selectedPaymentEvent ? (
+        <div className="modal-backdrop" role="presentation" onClick={closePaymentDetailModal}>
+          <section className="modal-card modal-detail" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Pagos del calendario</p>
+                <h2>Detalle de pago · {formatLongDate(selectedPaymentEvent.dateText)}</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={closePaymentDetailModal} aria-label="Cerrar detalle de pago">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="detail-grid">
+              <article className="detail-card highlight">
+                <span>Total pendiente del día</span>
+                <strong>{money.format(selectedPaymentEvent.total)}</strong>
+              </article>
+              <article className="detail-card">
+                <span>Tarjetas con vencimiento</span>
+                <strong>{selectedPaymentEvent.cards.length}</strong>
+              </article>
+              <article className="detail-card">
+                <span>Compras relacionadas</span>
+                <strong>{selectedPaymentCards.reduce((sum, card) => sum + card.charges.length, 0)}</strong>
+              </article>
+            </div>
+
+            <div className="payment-detail-list">
+              {selectedPaymentCards.map((paymentCard) => (
+                <article key={paymentCard.id} className="payment-detail-card">
+                  <div className="detail-section-head">
+                    <div>
+                      <p className="movement-meta">{paymentCard.label}</p>
+                      <h3>{money.format(paymentCard.amount)}</h3>
+                    </div>
+                    <div className="detail-actions">
+                      <span className="section-badge">
+                        {paymentCard.paymentDay ? `Día ${paymentCard.paymentDay}` : 'Sin día'}
+                      </span>
+                      <button
+                        type="button"
+                        className="primary-button"
+                        onClick={() => {
+                          void handlePayCardBalance(paymentCard.id)
+                        }}
+                        disabled={paymentCard.amount <= 0 || activePayingCardId === paymentCard.id}
+                      >
+                        {activePayingCardId === paymentCard.id ? 'Pagando...' : 'Pagar tarjeta'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {paymentCard.charges.length === 0 ? (
+                    <div className="empty-state compact">
+                      <p>Sin compras registradas para esta tarjeta.</p>
+                    </div>
+                  ) : (
+                    <div className="table-wrap">
+                      <table className="cards-table" aria-label="Detalle de compras por tarjeta">
+                        <thead>
+                          <tr>
+                            <th>Concepto</th>
+                            <th>Fecha</th>
+                            <th>Monto</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {paymentCard.charges.map((charge) => (
+                            <tr key={charge.id}>
+                              <td>{charge.concept}</td>
+                              <td>{charge.date}</td>
+                              <td>{money.format(charge.amount)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {isCardModalOpen ? (
         <div className="modal-backdrop" role="presentation" onClick={closeCardModal}>
@@ -754,8 +1260,8 @@ const App = () => {
                     Cancelar edición
                   </button>
                 ) : null}
-                <button type="submit" className="primary-button">
-                  {editingCardId ? 'Guardar cambios' : 'Guardar tarjeta'}
+                <button type="submit" className="primary-button" disabled={isSavingCard}>
+                  {isSavingCard ? 'Guardando...' : editingCardId ? 'Guardar cambios' : 'Guardar tarjeta'}
                 </button>
               </div>
             </form>
@@ -828,8 +1334,8 @@ const App = () => {
               </label>
 
               <div className="form-actions modal-actions">
-                <button type="submit" className="primary-button">
-                  Guardar gasto
+                <button type="submit" className="primary-button" disabled={isSavingCharge}>
+                  {isSavingCharge ? 'Guardando...' : 'Guardar gasto'}
                 </button>
               </div>
             </form>
@@ -972,25 +1478,35 @@ const App = () => {
                 <h3>Compras registradas</h3>
               </div>
               <div className="detail-actions">
-                <span className="section-badge">{recentCharges.length} registros</span>
+                <span className="section-badge">{filteredRecentCharges.length} de {recentCharges.length}</span>
+                <span className="section-badge">{money.format(filteredChargesTotal)}</span>
                 <button
                   type="button"
-                  className="ghost-button"
+                  className="primary-button"
                   onClick={() => {
                     closePurchasesModal()
                     openChargeModal()
                   }}
                 >
-                  <ArrowLeftRight size={16} />
+                  <Plus size={16} />
                   Nuevo gasto
                 </button>
               </div>
             </div>
 
-            {recentCharges.length === 0 ? (
+            <div className="quick-search-row">
+              <input
+                className="quick-search-input"
+                value={purchaseSearch}
+                onChange={(event) => setPurchaseSearch(event.target.value)}
+                placeholder="Buscar por concepto, tarjeta o fecha"
+              />
+            </div>
+
+            {filteredRecentCharges.length === 0 ? (
               <div className="empty-state compact">
                 <Banknote size={28} />
-                <p>No hay compras registradas.</p>
+                <p>{purchaseSearch.trim().length > 0 ? 'No hay compras que coincidan con la búsqueda.' : 'No hay compras registradas.'}</p>
               </div>
             ) : (
               <div className="table-wrap">
@@ -1005,7 +1521,7 @@ const App = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {recentCharges.map((charge) => (
+                    {filteredRecentCharges.map((charge) => (
                       <tr key={charge.id}>
                         <td>{charge.cardLabel}</td>
                         <td>{charge.concept}</td>

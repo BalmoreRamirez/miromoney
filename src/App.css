@@ -45,6 +45,33 @@
   font-size: 0.95rem;
 }
 
+.sync-indicator {
+  margin: 10px 0 0;
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  border: 2px solid rgba(49, 53, 72, 0.55);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.sync-indicator.cloud {
+  background: #deefe8;
+  color: #0f5f4f;
+}
+
+.sync-indicator.syncing {
+  background: #f0ecdb;
+  color: #7a5f16;
+}
+
+.sync-indicator.local {
+  background: #efe2e7;
+  color: #8b2142;
+}
+
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
@@ -358,6 +385,24 @@
   gap: 12px;
 }
 
+.monthly-payment-item.interactive {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms ease, background-color 140ms ease;
+}
+
+.monthly-payment-item.interactive:hover {
+  transform: translateY(-1px);
+  background: #efe9fb;
+}
+
+.monthly-payment-item.interactive:focus-visible {
+  outline: 3px solid rgba(126, 92, 229, 0.26);
+  outline-offset: 2px;
+}
+
 .purchases-modal-list {
   display: grid;
   gap: 10px;
@@ -637,6 +682,18 @@
   gap: 2px;
 }
 
+.calendar-event-button {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.calendar-event-button:hover {
+  background: rgba(126, 92, 229, 0.2);
+}
+
 .calendar-event strong {
   font-size: 0.95rem;
 }
@@ -789,9 +846,65 @@
   justify-content: end;
 }
 
+.detail-actions-spaced {
+  margin-bottom: 12px;
+}
+
+.quick-search-row {
+  margin-bottom: 12px;
+}
+
+.quick-search-input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 2px solid rgba(49, 53, 72, 0.62);
+  background: #f7f6fb;
+  color: var(--ink);
+  font: inherit;
+}
+
+.quick-search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(126, 92, 229, 0.14);
+}
+
 .detail-charge-list {
   display: grid;
   gap: 10px;
+}
+
+.payment-detail-list {
+  display: grid;
+  gap: 12px;
+  max-height: 52svh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.payment-detail-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.payment-detail-list::-webkit-scrollbar-thumb {
+  background: rgba(49, 53, 72, 0.28);
+  border-radius: 999px;
+}
+
+.payment-detail-card {
+  border-radius: 16px;
+  border: 1px solid rgba(15, 23, 42, 0.14);
+  background: rgba(255, 255, 255, 0.92);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.payment-detail-card h3 {
+  margin: 4px 0 0;
+  font-size: 1.2rem;
 }
 
 .detail-charge-item {

@@ -59,7 +59,16 @@ Configura estas reglas en Firestore Security Rules (Firebase Console > Firestore
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /transactions/{document=**} {
+    match /cards/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /charges/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Opcional: solo si mantienes datos de perfiles en users.
+    match /users/{document=**} {
       allow read, write: if request.auth != null;
     }
   }
@@ -70,7 +79,7 @@ service cloud.firestore {
 
 1. Las reglas están publicadas (no en draft)
 2. El usuario está autenticado (`request.auth != null`)
-3. La colección es exactamente `transactions`
+3. Las colecciones son exactamente `cards` y `charges`
 4. No hay reglas más restrictivas superiores
 
 ## Troubleshooting
