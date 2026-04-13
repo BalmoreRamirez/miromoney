@@ -1056,6 +1056,20 @@
   z-index: 40;
 }
 
+.modal-backdrop-top-layer {
+  z-index: 50;
+}
+
+.modal-backdrop-underlay {
+  background: rgba(31, 34, 48, 0.2);
+}
+
+.modal-backdrop-underlay .modal-card {
+  filter: blur(1.2px);
+  opacity: 0.88;
+  transform: scale(0.992);
+}
+
 .modal-card {
   width: min(720px, 100%);
   max-height: min(90svh, 920px);

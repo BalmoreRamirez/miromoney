@@ -431,27 +431,8 @@ const App = () => {
         return
       }
 
-      if (isPurchasesModalOpen) {
-        setPurchaseSearch('')
-        setIsPurchasesModalOpen(false)
+      if (isCardModalOpen || isChargeModalOpen) {
         return
-      }
-
-      if (isManageCardsModalOpen) {
-        setIsManageCardsModalOpen(false)
-        return
-      }
-
-      if (isChargeModalOpen) {
-        setIsChargeModalOpen(false)
-        setChargeForm(initialChargeForm(cards))
-        return
-      }
-
-      if (isCardModalOpen) {
-        setIsCardModalOpen(false)
-        setEditingCardId(null)
-        setCardForm(initialCardForm())
       }
     }
 
@@ -1454,7 +1435,10 @@ const App = () => {
       ) : null}
 
       {isCardModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={closeCardModal}>
+        <div
+          className={`modal-backdrop${isManageCardsModalOpen ? ' modal-backdrop-top-layer' : ''}`}
+          role="presentation"
+        >
           <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
@@ -1541,7 +1525,10 @@ const App = () => {
       ) : null}
 
       {isChargeModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={closeChargeModal}>
+        <div
+          className={`modal-backdrop${isPurchasesModalOpen ? ' modal-backdrop-top-layer' : ''}`}
+          role="presentation"
+        >
           <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
@@ -1615,7 +1602,10 @@ const App = () => {
       ) : null}
 
       {isManageCardsModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={closeManageCardsModal}>
+        <div
+          className={`modal-backdrop${isCardModalOpen ? ' modal-backdrop-underlay' : ''}`}
+          role="presentation"
+        >
           <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
@@ -1635,7 +1625,6 @@ const App = () => {
                   type="button"
                   className="primary-button"
                   onClick={() => {
-                    closeManageCardsModal()
                     openNewCardModal()
                   }}
                 >
@@ -1650,7 +1639,6 @@ const App = () => {
                     type="button"
                     className="primary-button"
                     onClick={() => {
-                      closeManageCardsModal()
                       openNewCardModal()
                     }}
                   >
@@ -1693,7 +1681,6 @@ const App = () => {
                                   type="button"
                                   className="icon-button"
                                   onClick={() => {
-                                    closeManageCardsModal()
                                     openEditCardModal(card)
                                   }}
                                   disabled={isLocked}
@@ -1732,7 +1719,10 @@ const App = () => {
       ) : null}
 
       {isPurchasesModalOpen ? (
-        <div className="modal-backdrop" role="presentation" onClick={closePurchasesModal}>
+        <div
+          className={`modal-backdrop${isChargeModalOpen ? ' modal-backdrop-underlay' : ''}`}
+          role="presentation"
+        >
           <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
@@ -1756,7 +1746,6 @@ const App = () => {
                   type="button"
                   className="primary-button"
                   onClick={() => {
-                    closePurchasesModal()
                     openChargeModal()
                   }}
                 >
