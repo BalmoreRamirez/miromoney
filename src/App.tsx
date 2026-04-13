@@ -94,7 +94,7 @@ type ThemeMode = 'light' | 'dark'
 const money = new Intl.NumberFormat('es-CO', {
   style: 'currency',
   currency: 'COP',
-  maximumFractionDigits: 0,
+  maximumFractionDigits: 2,
 })
 
 const monthFormatter = new Intl.DateTimeFormat('es-CO', {
@@ -1516,7 +1516,7 @@ const App = () => {
                 <input
                   type="number"
                   min="0"
-                  step="1"
+                  step="0.01"
                   value={cardForm.balance}
                   onChange={(event) => setCardForm((current) => ({ ...current, balance: event.target.value }))}
                   placeholder="0"
@@ -1613,8 +1613,8 @@ const App = () => {
                 <span>Monto</span>
                 <input
                   type="number"
-                  min="1"
-                  step="1"
+                  min="0.01"
+                  step="0.01"
                   value={chargeForm.amount}
                   onChange={(event) => setChargeForm((current) => ({ ...current, amount: event.target.value }))}
                   placeholder="0"
