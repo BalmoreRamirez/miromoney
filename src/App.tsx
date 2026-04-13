@@ -77,8 +77,6 @@ type PaymentDayCardDetail = {
   charges: CardCharge[]
 }
 
-type SyncState = 'syncing' | 'cloud' | 'local'
-
 const today = new Date()
 
 const STORAGE_KEYS = {
@@ -261,7 +259,8 @@ const App = () => {
   const [cards, setCards] = useState<CreditCardAccount[]>(() => loadCards())
   const [charges, setCharges] = useState<CardCharge[]>(() => loadCharges())
   const [isCloudSyncEnabled, setIsCloudSyncEnabled] = useState(false)
-  const [, setSyncState] = useState<SyncState>(db ? 'syncing' : 'local')
+  const [isAuthChecked, setIsAuthChecked] = useState(auth ? Boolean(auth.currentUser) : true)
+  const [currentUserUid, setCurrentUserUid] = useState<string | null>(auth?.currentUser?.uid ?? null)
   const [editingCardId, setEditingCardId] = useState<string | null>(null)
   const [isCardModalOpen, setIsCardModalOpen] = useState(false)
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
@@ -275,6 +274,10 @@ const App = () => {
   const [currentUserLabel, setCurrentUserLabel] = useState<string | null>(auth?.currentUser?.email ?? null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [isSessionMenuOpen, setIsSessionMenuOpen] = useState(false)
+  const [isLoggingIn, setIsLoggingIn] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
+  const [loginEmail, setLoginEmail] = useState(defaultLoginEmail ?? '')
+  const [loginPassword, setLoginPassword] = useState(defaultLoginPassword ?? '')
   const [purchaseSearch, setPurchaseSearch] = useState('')
   const sessionMenuRef = useRef<HTMLDivElement | null>(null)
   const [cardForm, setCardForm] = useState<CardFormState>(() => initialCardForm())
@@ -293,14 +296,19 @@ const App = () => {
   useEffect(() => {
     if (!auth) {
       setIsUserAuthenticated(false)
+      setCurrentUserUid(null)
       setCurrentUserLabel(null)
+      setIsAuthChecked(true)
       return
     }
 
     const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsAuthChecked(true)
       setIsUserAuthenticated(Boolean(user))
+      setCurrentUserUid(user?.uid ?? null)
       if (!user) {
         setCurrentUserLabel(null)
+        setIsSessionMenuOpen(false)
         return
       }
 
@@ -343,48 +351,21 @@ const App = () => {
 
   useEffect(() => {
     const loadFromFirebase = async () => {
-      setSyncState(db ? 'syncing' : 'local')
-
-      if (!db) {
-        setIsCloudSyncEnabled(false)
-        setSyncState('local')
+      if (!isAuthChecked) {
         return
       }
 
-      if (auth && !auth.currentUser) {
-        if (!defaultLoginEmail || !defaultLoginPassword) {
-          console.warn(
-            'Firebase Auth no inicializado: faltan VITE_DEFAULT_LOGIN_EMAIL o VITE_DEFAULT_LOGIN_PASSWORD. Se mantiene modo local.',
-          )
-          setIsCloudSyncEnabled(false)
-          setSyncState('local')
-          return
-        }
-
-        try {
-          await signInWithEmailAndPassword(auth, defaultLoginEmail, defaultLoginPassword)
-        } catch (error) {
-          const code = getFirebaseErrorCode(error)
-          console.error(
-            `No se pudo autenticar en Firebase (${code}). Se mantiene modo local.`,
-            error,
-          )
-          setIsCloudSyncEnabled(false)
-          setSyncState('local')
-          return
-        }
+      if (!db || !currentUserUid) {
+        setIsCloudSyncEnabled(false)
+        setCards([])
+        setCharges([])
+        return
       }
 
       try {
-        const currentUid = auth?.currentUser?.uid
-        if (!currentUid) {
-          console.error('No hay usuario autenticado en Firebase para cargar Firestore.')
-          return
-        }
-
         const [cardsSnapshot, chargesSnapshot] = await Promise.all([
-          getDocs(query(collection(db, 'cards'), where('ownerUid', '==', currentUid))),
-          getDocs(query(collection(db, 'charges'), where('ownerUid', '==', currentUid))),
+          getDocs(query(collection(db, 'cards'), where('ownerUid', '==', currentUserUid))),
+          getDocs(query(collection(db, 'charges'), where('ownerUid', '==', currentUserUid))),
         ])
 
         const remoteCards = normalizeCards(
@@ -404,7 +385,6 @@ const App = () => {
         setCards(remoteCards)
         setCharges(remoteCharges)
         setIsCloudSyncEnabled(true)
-        setSyncState('cloud')
       } catch (error) {
         const code = getFirebaseErrorCode(error)
         if (code === 'permission-denied') {
@@ -413,18 +393,20 @@ const App = () => {
             error,
           )
           setIsCloudSyncEnabled(false)
-          setSyncState('local')
+          setCards([])
+          setCharges([])
           return
         }
 
         console.error(`No se pudo cargar Firestore (${code}), se mantiene modo local.`, error)
         setIsCloudSyncEnabled(false)
-        setSyncState('local')
+        setCards([])
+        setCharges([])
       }
     }
 
     void loadFromFirebase()
-  }, [])
+  }, [isAuthChecked, currentUserUid])
 
   useEffect(() => {
     if (!isAnyModalOpen) {
@@ -1007,7 +989,6 @@ const App = () => {
     try {
       await signOut(auth)
       setIsCloudSyncEnabled(false)
-      setSyncState('local')
       setCards([])
       setCharges([])
       setSelectedPaymentDateText(null)
@@ -1027,10 +1008,100 @@ const App = () => {
     }
   }
 
+  const handleLoginSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+
+    if (!auth || isLoggingIn) {
+      return
+    }
+
+    const email = loginEmail.trim()
+    const password = loginPassword
+
+    if (!email || !password) {
+      setLoginError('Ingresa correo y contraseña para continuar.')
+      return
+    }
+
+    setIsLoggingIn(true)
+    setLoginError(null)
+
+    try {
+      await signInWithEmailAndPassword(auth, email, password)
+    } catch (error) {
+      const code = getFirebaseErrorCode(error)
+      if (code === 'auth/invalid-credential' || code === 'auth/wrong-password' || code === 'auth/user-not-found') {
+        setLoginError('Credenciales inválidas. Verifica correo y contraseña.')
+      } else {
+        setLoginError('No se pudo iniciar sesión. Intenta nuevamente.')
+      }
+    } finally {
+      setIsLoggingIn(false)
+    }
+  }
+
   const shiftMonth = (delta: number) => {
     const nextMonth = new Date(selectedMonthDate)
     nextMonth.setMonth(nextMonth.getMonth() + delta)
     setSelectedMonth(toMonthInput(nextMonth))
+  }
+
+  if (!isAuthChecked) {
+    return (
+      <div className="app-shell auth-shell">
+        <main className="auth-card">
+          <p className="eyebrow">MiroMoney</p>
+          <h1>Validando sesión...</h1>
+          <p className="hero-copy">Estamos comprobando tu acceso para cargar tu información.</p>
+        </main>
+      </div>
+    )
+  }
+
+  if (!isUserAuthenticated) {
+    return (
+      <div className="app-shell auth-shell">
+        <main className="auth-card">
+          <p className="eyebrow">MiroMoney</p>
+          <h1>Iniciar sesión</h1>
+          <p className="hero-copy">Accede con tu cuenta para continuar con tus tarjetas y compras.</p>
+
+          <form className="form-grid auth-form" onSubmit={handleLoginSubmit}>
+            <label className="field">
+              <span>Correo</span>
+              <input
+                type="email"
+                autoComplete="email"
+                value={loginEmail}
+                onChange={(event) => setLoginEmail(event.target.value)}
+                placeholder="correo@dominio.com"
+                required
+              />
+            </label>
+
+            <label className="field">
+              <span>Contraseña</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={loginPassword}
+                onChange={(event) => setLoginPassword(event.target.value)}
+                placeholder="••••••••"
+                required
+              />
+            </label>
+
+            {loginError ? <p className="auth-error">{loginError}</p> : null}
+
+            <div className="form-actions auth-actions">
+              <button type="submit" className="primary-button" disabled={isLoggingIn}>
+                {isLoggingIn ? 'Ingresando...' : 'Entrar'}
+              </button>
+            </div>
+          </form>
+        </main>
+      </div>
+    )
   }
 
   return (

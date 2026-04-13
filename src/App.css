@@ -19,6 +19,43 @@
   box-shadow: 0 4px 12px rgba(31, 34, 48, 0.06);
 }
 
+.auth-shell {
+  display: grid;
+  place-items: center;
+}
+
+.auth-card {
+  width: min(520px, 100%);
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border-radius: 22px;
+  border: 2px solid rgba(49, 53, 72, 0.8);
+  background: #f0edf6;
+  box-shadow: 0 4px 12px rgba(31, 34, 48, 0.06);
+}
+
+.auth-card h1 {
+  margin: 0;
+  font-size: clamp(1.8rem, 4.6vw, 2.4rem);
+  line-height: 1;
+}
+
+.auth-form {
+  margin-top: 4px;
+}
+
+.auth-error {
+  margin: 0;
+  color: #8b2142;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.auth-actions {
+  justify-content: flex-end;
+}
+
 .hero-panel {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
