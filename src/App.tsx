@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { FormEvent } from 'react'
 import './App.css'
 import {
@@ -12,15 +12,17 @@ import {
   where,
   writeBatch,
 } from 'firebase/firestore'
-import { signInWithEmailAndPassword } from 'firebase/auth'
+import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
 import {
   Banknote,
   CalendarDays,
   CreditCard,
+  LogOut,
   Pencil,
   Plus,
   Settings2,
   Trash2,
+  User,
   X,
   Wallet,
 } from 'lucide-react'
@@ -269,7 +271,12 @@ const App = () => {
   const [isSavingCard, setIsSavingCard] = useState(false)
   const [isSavingCharge, setIsSavingCharge] = useState(false)
   const [activePayingCardId, setActivePayingCardId] = useState<string | null>(null)
+  const [isUserAuthenticated, setIsUserAuthenticated] = useState(Boolean(auth?.currentUser))
+  const [currentUserLabel, setCurrentUserLabel] = useState<string | null>(auth?.currentUser?.email ?? null)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [isSessionMenuOpen, setIsSessionMenuOpen] = useState(false)
   const [purchaseSearch, setPurchaseSearch] = useState('')
+  const sessionMenuRef = useRef<HTMLDivElement | null>(null)
   const [cardForm, setCardForm] = useState<CardFormState>(() => initialCardForm())
   const [chargeForm, setChargeForm] = useState<ChargeFormState>(() => initialChargeForm(loadCards()))
   const [selectedMonth, setSelectedMonth] = useState(() => {
@@ -282,6 +289,57 @@ const App = () => {
     isPurchasesModalOpen ||
     isManageCardsModalOpen ||
     selectedPaymentDateText !== null
+
+  useEffect(() => {
+    if (!auth) {
+      setIsUserAuthenticated(false)
+      setCurrentUserLabel(null)
+      return
+    }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      setIsUserAuthenticated(Boolean(user))
+      if (!user) {
+        setCurrentUserLabel(null)
+        return
+      }
+
+      setCurrentUserLabel(user.email?.trim() || `UID ${user.uid.slice(0, 8)}`)
+    })
+
+    return () => unsubscribe()
+  }, [])
+
+  useEffect(() => {
+    if (!isSessionMenuOpen) {
+      return
+    }
+
+    const handleOutsideClick = (event: MouseEvent) => {
+      const target = event.target
+      if (!(target instanceof Node)) {
+        return
+      }
+
+      if (sessionMenuRef.current && !sessionMenuRef.current.contains(target)) {
+        setIsSessionMenuOpen(false)
+      }
+    }
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsSessionMenuOpen(false)
+      }
+    }
+
+    window.addEventListener('mousedown', handleOutsideClick)
+    window.addEventListener('keydown', handleEscape)
+
+    return () => {
+      window.removeEventListener('mousedown', handleOutsideClick)
+      window.removeEventListener('keydown', handleEscape)
+    }
+  }, [isSessionMenuOpen])
 
   useEffect(() => {
     const loadFromFirebase = async () => {
@@ -932,6 +990,43 @@ const App = () => {
     }
   }
 
+  const handleLogout = async () => {
+    if (!auth || isLoggingOut) {
+      return
+    }
+
+    setIsSessionMenuOpen(false)
+
+    const confirmed = window.confirm('¿Cerrar sesión de Firebase en este dispositivo?')
+    if (!confirmed) {
+      return
+    }
+
+    setIsLoggingOut(true)
+
+    try {
+      await signOut(auth)
+      setIsCloudSyncEnabled(false)
+      setSyncState('local')
+      setCards([])
+      setCharges([])
+      setSelectedPaymentDateText(null)
+      setIsCardModalOpen(false)
+      setIsChargeModalOpen(false)
+      setIsPurchasesModalOpen(false)
+      setIsManageCardsModalOpen(false)
+      setPurchaseSearch('')
+      window.localStorage.removeItem(STORAGE_KEYS.cards)
+      window.localStorage.removeItem(STORAGE_KEYS.charges)
+      window.alert('Sesión cerrada correctamente.')
+    } catch (error) {
+      console.error('No se pudo cerrar sesión en Firebase:', error)
+      window.alert('No se pudo cerrar sesión. Intenta nuevamente.')
+    } finally {
+      setIsLoggingOut(false)
+    }
+  }
+
   const shiftMonth = (delta: number) => {
     const nextMonth = new Date(selectedMonthDate)
     nextMonth.setMonth(nextMonth.getMonth() + delta)
@@ -959,24 +1054,73 @@ const App = () => {
           </div>
 
           <div className="hero-actions">
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={openPurchasesModal}
-            >
-              <Banknote size={16} />
-              Compras
-            </button>
-            <button
-              type="button"
-              className="ghost-button"
-              onClick={openManageCardsModal}
-              aria-label="Configurar tarjetas"
-              title="Configurar tarjetas"
-            >
-              <Settings2 size={16} />
-              Tarjetas
-            </button>
+            <div className="hero-primary-actions">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={openPurchasesModal}
+              >
+                <Banknote size={16} />
+                Compras
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={openManageCardsModal}
+                aria-label="Configurar tarjetas"
+                title="Configurar tarjetas"
+              >
+                <Settings2 size={16} />
+                Tarjetas
+              </button>
+            </div>
+            {isUserAuthenticated ? (
+              <div className="session-controls">
+                <div className="session-chip" aria-live="polite">
+                  <div className="session-chip-meta">
+                    <span className="session-chip-label">Sesión activa</span>
+                    <strong className="session-chip-user" title={currentUserLabel || 'Usuario autenticado'}>
+                      {currentUserLabel || 'Usuario autenticado'}
+                    </strong>
+                  </div>
+                </div>
+                <div className="session-menu-wrap" ref={sessionMenuRef}>
+                  <button
+                    type="button"
+                    className="icon-pill-button session-menu-trigger"
+                    onClick={() => setIsSessionMenuOpen((current) => !current)}
+                    aria-haspopup="menu"
+                    aria-expanded={isSessionMenuOpen}
+                    aria-label="Opciones de sesión"
+                  >
+                    <User size={16} />
+                  </button>
+
+                  {isSessionMenuOpen ? (
+                    <div className="session-menu-panel" role="menu" aria-label="Menú de sesión">
+                      <button
+                        type="button"
+                        className="ghost-button logout-button session-menu-item"
+                        onClick={() => {
+                          void handleLogout()
+                        }}
+                        disabled={isLoggingOut}
+                      >
+                        <LogOut size={16} />
+                        {isLoggingOut ? 'Cerrando...' : 'Cerrar sesión'}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : (
+              <div className="session-chip offline" aria-live="polite">
+                <div className="session-chip-meta">
+                  <span className="session-chip-label">Sesión</span>
+                  <strong className="session-chip-user">Sin sesión activa</strong>
+                </div>
+              </div>
+            )}
           </div>
         </section>
 
@@ -1455,6 +1599,7 @@ const App = () => {
             <p className="manage-cards-note">
               Solo puedes actualizar o eliminar tarjetas que no tengan transacciones relacionadas.
             </p>
+
           </section>
         </div>
       ) : null}

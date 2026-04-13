@@ -75,8 +75,97 @@
 .hero-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   justify-content: end;
+  align-items: center;
+}
+
+.hero-primary-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.hero-primary-actions > .ghost-button {
+  min-height: 42px;
+  padding: 0 16px;
+  font-size: 0.95rem;
+}
+
+.session-controls {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.session-chip {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-width: 250px;
+  max-width: 320px;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-radius: 14px;
+  border: 2px solid rgba(49, 53, 72, 0.66);
+  background: #f7f6fb;
+}
+
+.session-chip.offline {
+  background: #efe2e7;
+}
+
+.session-chip-meta {
+  display: grid;
+  gap: 3px;
+}
+
+.session-chip-label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.session-chip-user {
+  font-size: 0.9rem;
+  line-height: 1.2;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-menu-wrap {
+  position: relative;
+}
+
+.session-menu-trigger {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+}
+
+.session-menu-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 180px;
+  padding: 8px;
+  border-radius: 12px;
+  border: 2px solid rgba(49, 53, 72, 0.6);
+  background: #f7f6fb;
+  box-shadow: 0 10px 18px rgba(31, 34, 48, 0.14);
+  z-index: 80;
+}
+
+.session-menu-item {
+  width: 100%;
+  min-height: 40px;
+  justify-content: flex-start;
+  padding: 0 12px;
 }
 
 .pill-button,
@@ -333,6 +422,16 @@
 .ghost-button {
   background: #f6f5fa;
   color: var(--ink);
+}
+
+.logout-button {
+  background: #f9ecef;
+  color: #8d2742;
+  border-color: rgba(141, 39, 66, 0.45);
+}
+
+.logout-button:hover {
+  background: #f4dde4;
 }
 
 .ghost-button.compact {
@@ -1038,6 +1137,25 @@
   .hero-panel {
     flex-direction: column;
     align-items: start;
+  }
+
+  .hero-actions {
+    width: 100%;
+    justify-content: start;
+  }
+
+  .hero-primary-actions {
+    width: 100%;
+  }
+
+  .session-controls {
+    width: 100%;
+  }
+
+  .session-chip {
+    min-width: 0;
+    flex: 1;
+    max-width: none;
   }
 
   .stats-grid {
