@@ -261,7 +261,7 @@ const App = () => {
   const [cards, setCards] = useState<CreditCardAccount[]>(() => loadCards())
   const [charges, setCharges] = useState<CardCharge[]>(() => loadCharges())
   const [isCloudSyncEnabled, setIsCloudSyncEnabled] = useState(false)
-  const [syncState, setSyncState] = useState<SyncState>(db ? 'syncing' : 'local')
+  const [, setSyncState] = useState<SyncState>(db ? 'syncing' : 'local')
   const [editingCardId, setEditingCardId] = useState<string | null>(null)
   const [isCardModalOpen, setIsCardModalOpen] = useState(false)
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
@@ -1037,19 +1037,12 @@ const App = () => {
     <div className="app-shell">
       <main className="dashboard-shell">
         <section className="hero-panel">
-          <div>
+          <div className="hero-content">
             <p className="eyebrow">Gestión de tarjetas</p>
             <h1>MiroMoney Cards</h1>
             <p className="hero-copy">
               Controla tus tarjetas de crédito, registra cada compra o gasto, y visualiza
               tus pagos próximos en un calendario claro.
-            </p>
-            <p className={`sync-indicator ${syncState}`}>
-              {syncState === 'cloud'
-                ? 'Sincronizado con Firebase'
-                : syncState === 'syncing'
-                  ? 'Sincronizando con Firebase...'
-                  : 'Modo local activo'}
             </p>
           </div>
 
