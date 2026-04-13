@@ -18,9 +18,11 @@ import {
   CalendarDays,
   CreditCard,
   LogOut,
+  Moon,
   Pencil,
   Plus,
   Settings2,
+  Sun,
   Trash2,
   User,
   X,
@@ -84,7 +86,10 @@ const STORAGE_KEYS = {
   cards: 'miromoney.credit-cards',
   charges: 'miromoney.credit-charges',
   month: 'miromoney.calendar-month',
+  theme: 'miromoney.theme',
 } as const
+
+type ThemeMode = 'light' | 'dark'
 
 const money = new Intl.NumberFormat('es-CO', {
   style: 'currency',
@@ -234,6 +239,19 @@ const loadCharges = (): CardCharge[] => {
   return normalizeCharges(saved)
 }
 
+const loadThemeMode = (): ThemeMode => {
+  const savedTheme = window.localStorage.getItem(STORAGE_KEYS.theme)
+  if (savedTheme === 'light' || savedTheme === 'dark') {
+    return savedTheme
+  }
+
+  if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+    return 'dark'
+  }
+
+  return 'light'
+}
+
 const getCardDisplayName = (card: CreditCardAccount) =>
   card.nickname.trim().length > 0 ? `${card.bankName} · ${card.nickname}` : card.bankName
 
@@ -284,6 +302,7 @@ const App = () => {
   const [loginEmail, setLoginEmail] = useState(defaultLoginEmail ?? '')
   const [loginPassword, setLoginPassword] = useState(defaultLoginPassword ?? '')
   const [purchaseSearch, setPurchaseSearch] = useState('')
+  const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode())
   const sessionMenuRef = useRef<HTMLDivElement | null>(null)
   const [cardForm, setCardForm] = useState<CardFormState>(() => initialCardForm())
   const [chargeForm, setChargeForm] = useState<ChargeFormState>(() => initialChargeForm(loadCards()))
@@ -455,6 +474,11 @@ const App = () => {
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.month, selectedMonth)
   }, [selectedMonth])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', themeMode)
+    window.localStorage.setItem(STORAGE_KEYS.theme, themeMode)
+  }, [themeMode])
 
   useEffect(() => {
     if (cards.length === 0) {
@@ -1090,6 +1114,12 @@ const App = () => {
     setSelectedMonth(toMonthInput(nextMonth))
   }
 
+  const isDarkTheme = themeMode === 'dark'
+
+  const toggleThemeMode = () => {
+    setThemeMode((current) => (current === 'light' ? 'dark' : 'light'))
+  }
+
   if (!isAuthChecked) {
     return (
       <div className="app-shell auth-shell">
@@ -1180,6 +1210,15 @@ const App = () => {
               >
                 <Settings2 size={16} />
                 Tarjetas
+              </button>
+              <button
+                type="button"
+                className="ghost-button theme-toggle-button"
+                onClick={toggleThemeMode}
+                aria-label={isDarkTheme ? 'Activar tema de día' : 'Activar tema de noche'}
+                title={isDarkTheme ? 'Cambiar a modo día' : 'Cambiar a modo noche'}
+              >
+                {isDarkTheme ? <Sun size={16} /> : <Moon size={16} />}
               </button>
             </div>
             {isUserAuthenticated ? (
@@ -1289,7 +1328,9 @@ const App = () => {
 
                   return (
                     <div key={dateText} className={`calendar-cell${isToday ? ' today' : ''}`}>
-                      <span className="calendar-day-number">{day.getDate()}</span>
+                      <div className="calendar-day-head">
+                        <span className={`calendar-day-number${isToday ? ' today' : ''}`}>{day.getDate()}</span>
+                      </div>
                       {eventsForDay ? (
                         <button
                           type="button"

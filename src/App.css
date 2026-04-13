@@ -2,6 +2,10 @@
   color-scheme: light;
 }
 
+:root[data-theme='dark'] {
+  color-scheme: dark;
+}
+
 .app-shell {
   min-height: 100svh;
   padding: 18px;
@@ -785,8 +789,37 @@
   box-shadow: 0 0 0 2px rgba(126, 92, 229, 0.14);
 }
 
+.calendar-day-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
 .calendar-day-number {
   font-weight: 800;
+}
+
+.calendar-day-number.today {
+  min-width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #f7faff;
+}
+
+.calendar-today-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(126, 92, 229, 0.4);
+  background: rgba(126, 92, 229, 0.14);
+  color: var(--accent-strong);
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
 }
 
 .calendar-event {
@@ -1148,6 +1181,152 @@
   margin: 12px 0 0;
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.theme-toggle-button {
+  width: 42px;
+  min-height: 40px;
+  padding: 0;
+}
+
+:root[data-theme='dark'] .dashboard-shell,
+:root[data-theme='dark'] .auth-card,
+:root[data-theme='dark'] .hero-panel,
+:root[data-theme='dark'] .panel,
+:root[data-theme='dark'] .modal-card {
+  border-color: rgba(143, 152, 188, 0.72);
+  background: #1d253b;
+  box-shadow: 0 12px 28px rgba(2, 6, 20, 0.32);
+}
+
+:root[data-theme='dark'] .stat-card {
+  border-color: rgba(143, 152, 188, 0.62);
+  box-shadow: none;
+}
+
+:root[data-theme='dark'] .emerald {
+  background: #1e3340;
+}
+
+:root[data-theme='dark'] .amber {
+  background: #3a2e36;
+}
+
+:root[data-theme='dark'] .coral {
+  background: #2b2c44;
+}
+
+:root[data-theme='dark'] .slate {
+  background: #2a314a;
+}
+
+:root[data-theme='dark'] .session-chip,
+:root[data-theme='dark'] .session-menu-panel,
+:root[data-theme='dark'] .section-badge,
+:root[data-theme='dark'] .ghost-button,
+:root[data-theme='dark'] .icon-button,
+:root[data-theme='dark'] .icon-pill-button,
+:root[data-theme='dark'] .pill-button.secondary,
+:root[data-theme='dark'] .field input,
+:root[data-theme='dark'] .field select,
+:root[data-theme='dark'] .quick-search-input,
+:root[data-theme='dark'] .calendar-cell,
+:root[data-theme='dark'] .monthly-payment-item,
+:root[data-theme='dark'] .card-item,
+:root[data-theme='dark'] .charge-item,
+:root[data-theme='dark'] .agenda-item,
+:root[data-theme='dark'] .manage-card-item {
+  border-color: rgba(143, 152, 188, 0.55);
+  background: #242e48;
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .icon-pill-button:hover,
+:root[data-theme='dark'] .ghost-button:hover,
+:root[data-theme='dark'] .icon-button:hover,
+:root[data-theme='dark'] .monthly-payment-item.interactive:hover {
+  background: #2c3958;
+}
+
+:root[data-theme='dark'] .session-chip.offline {
+  background: #3a2834;
+}
+
+:root[data-theme='dark'] .logout-button,
+:root[data-theme='dark'] .icon-button.danger {
+  background: #4a2a39;
+  color: #ffd3df;
+  border-color: rgba(255, 144, 172, 0.52);
+}
+
+:root[data-theme='dark'] .logout-button:hover,
+:root[data-theme='dark'] .icon-button.danger:hover {
+  background: #5a3144;
+}
+
+:root[data-theme='dark'] .empty-state {
+  border-color: rgba(143, 152, 188, 0.44);
+  background: rgba(36, 46, 72, 0.72);
+}
+
+:root[data-theme='dark'] .calendar-cell.empty {
+  background: transparent;
+  border-color: rgba(143, 152, 188, 0.4);
+}
+
+:root[data-theme='dark'] .calendar-event {
+  background: rgba(122, 162, 255, 0.2);
+}
+
+:root[data-theme='dark'] .calendar-today-pill {
+  border-color: rgba(122, 162, 255, 0.5);
+  background: rgba(122, 162, 255, 0.22);
+  color: #d5e2ff;
+}
+
+:root[data-theme='dark'] .calendar-event-button:hover {
+  background: rgba(122, 162, 255, 0.28);
+}
+
+:root[data-theme='dark'] .table-wrap,
+:root[data-theme='dark'] .detail-card,
+:root[data-theme='dark'] .payment-detail-card,
+:root[data-theme='dark'] .detail-charge-item {
+  border-color: rgba(143, 152, 188, 0.38);
+  background: #212c45;
+}
+
+:root[data-theme='dark'] .detail-card.highlight {
+  background: rgba(122, 162, 255, 0.18);
+}
+
+:root[data-theme='dark'] .cards-table th,
+:root[data-theme='dark'] .cards-table td {
+  border-bottom-color: rgba(143, 152, 188, 0.2);
+}
+
+:root[data-theme='dark'] .cards-table th {
+  background: rgba(143, 152, 188, 0.12);
+}
+
+:root[data-theme='dark'] .cards-table tbody tr:hover {
+  background: rgba(122, 162, 255, 0.18);
+}
+
+:root[data-theme='dark'] .card-dates span,
+:root[data-theme='dark'] .charge-preview li,
+:root[data-theme='dark'] .agenda-item li,
+:root[data-theme='dark'] .card-metrics div {
+  background: rgba(143, 152, 188, 0.14);
+  border-color: rgba(143, 152, 188, 0.26);
+}
+
+:root[data-theme='dark'] .table-link:hover {
+  color: #9fb8ff;
+}
+
+:root[data-theme='dark'] .modal-backdrop {
+  background: rgba(6, 10, 22, 0.62);
 }
 
 @media (max-width: 1180px) {
