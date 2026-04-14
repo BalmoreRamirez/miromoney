@@ -292,6 +292,18 @@ const getCardDisplayName = (card: CreditCardAccount) =>
 const normalizeInstallmentConcept = (concept: string) =>
   concept.replace(/\s+\(Cuota\s+\d+\/\d+\)$/i, '').trim()
 
+const getInstallmentProgressLabel = (item: PurchaseHistoryItem) => {
+  if (!item.isGroupedInstallment) {
+    return '—'
+  }
+
+  if (item.pendingInstallments > 0) {
+    return `${item.paidInstallments + 1}/${item.totalInstallments}`
+  }
+
+  return `${item.totalInstallments}/${item.totalInstallments}`
+}
+
 const getDueDateForMonth = (card: CreditCardAccount, monthDate: Date) =>
   toCalendarDate(monthDate.getFullYear(), monthDate.getMonth(), card.paymentDay)
 
@@ -2201,7 +2213,7 @@ const App = () => {
                         <td>{item.concept}</td>
                         <td>{item.date}</td>
                         <td>{money.format(item.amount)}</td>
-                        <td>{item.isGroupedInstallment ? `${item.paidInstallments}/${item.totalInstallments}` : '—'}</td>
+                        <td>{getInstallmentProgressLabel(item)}</td>
                         <td>
                           <div className="table-actions">
                             <button
@@ -2292,7 +2304,7 @@ const App = () => {
                         <td>{money.format(item.amount)}</td>
                         <td>{item.totalInstallments}</td>
                         <td>{money.format(item.amount / item.totalInstallments)}</td>
-                        <td>{item.paidInstallments}/{item.totalInstallments}</td>
+                        <td>{getInstallmentProgressLabel(item)}</td>
                         <td>
                           <div className="table-actions">
                             <button
