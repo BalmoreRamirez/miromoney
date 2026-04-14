@@ -2201,7 +2201,7 @@ const App = () => {
                         <td>{item.concept}</td>
                         <td>{item.date}</td>
                         <td>{money.format(item.amount)}</td>
-                        <td>{item.paidInstallments}/{item.totalInstallments}</td>
+                        <td>{item.isGroupedInstallment ? `${item.paidInstallments}/${item.totalInstallments}` : '—'}</td>
                         <td>
                           <div className="table-actions">
                             <button
