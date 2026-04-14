@@ -789,17 +789,25 @@ const App = () => {
   }, [zeroRatePurchaseItems])
 
   const monthlyCardPayments = useMemo(() => {
-    return paymentEvents
-      .flatMap((event) =>
-        event.cards.map((card) => ({
-          id: card.id,
-          label: card.label,
-          amount: card.amount,
-          dueDate: new Date(`${event.dateText}T12:00:00`),
-        })),
-      )
+    const year = selectedMonthDate.getFullYear()
+    const monthIndex = selectedMonthDate.getMonth()
+    const amountByCardId = new Map<string, number>()
+
+    paymentEvents.forEach((event) => {
+      event.cards.forEach((card) => {
+        amountByCardId.set(card.id, (amountByCardId.get(card.id) ?? 0) + card.amount)
+      })
+    })
+
+    return cards
+      .map((card) => ({
+        id: card.id,
+        label: getCardDisplayName(card),
+        amount: amountByCardId.get(card.id) ?? 0,
+        dueDate: toCalendarDate(year, monthIndex, card.paymentDay),
+      }))
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime())
-  }, [paymentEvents])
+  }, [cards, paymentEvents, selectedMonthDate])
 
   const monthlyPaymentsTotal = useMemo(() => {
     return monthlyCardPayments.reduce((sum, item) => sum + item.amount, 0)
@@ -1684,14 +1692,18 @@ const App = () => {
                   {monthlyCardPayments.map((payment) => (
                     <button
                       type="button"
-                      className="monthly-payment-item interactive"
+                      className={`monthly-payment-item${payment.amount > 0 ? ' interactive' : ''}`}
                       key={payment.id}
-                      onClick={() => openPaymentDetailModal(toDateInput(payment.dueDate))}
+                      onClick={() => {
+                        if (payment.amount > 0) {
+                          openPaymentDetailModal(toDateInput(payment.dueDate))
+                        }
+                      }}
                     >
                       <div>
                         <p className="movement-meta">{payment.label}</p>
                         <h3>{money.format(payment.amount)}</h3>
-                        <span>Vence: {toDateInput(payment.dueDate)}</span>
+                        <span>{payment.amount > 0 ? `Vence: ${toDateInput(payment.dueDate)}` : 'Sin gastos en este mes'}</span>
                       </div>
                       <div className="charge-right">
                         <strong>Día {payment.dueDate.getDate()}</strong>
