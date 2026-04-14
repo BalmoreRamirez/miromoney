@@ -1086,7 +1086,7 @@ const App = () => {
         const dueDate = getInstallmentDueDate(firstDueDate, index, targetCard.paymentDay)
         const installmentLabel = installments > 1 ? ` (Cuota ${index + 1}/${installments})` : ''
 
-        return {
+        const baseCharge: CardCharge = {
           id: generateId(),
           ownerUid: currentUid,
           cardId,
@@ -1094,11 +1094,19 @@ const App = () => {
           amount: installmentAmount,
           date: chargeForm.date,
           dueDate: toDateInput(dueDate),
-          purchaseGroupId,
-          installmentNumber: installments > 1 ? index + 1 : undefined,
-          installmentTotal: installments > 1 ? installments : undefined,
           paid: false,
         }
+
+        if (installments > 1) {
+          return {
+            ...baseCharge,
+            purchaseGroupId,
+            installmentNumber: index + 1,
+            installmentTotal: installments,
+          }
+        }
+
+        return baseCharge
       })
 
       const nextBalance = Math.max(0, targetCard.balance - amount)
