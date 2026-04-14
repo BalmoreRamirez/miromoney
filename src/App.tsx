@@ -48,6 +48,10 @@ type CardCharge = {
   concept: string
   amount: number
   date: string
+  dueDate?: string
+  purchaseGroupId?: string
+  installmentNumber?: number
+  installmentTotal?: number
   paid: boolean
 }
 
@@ -64,6 +68,8 @@ type ChargeFormState = {
   concept: string
   amount: string
   date: string
+  purchaseType: 'single' | 'zero-rate'
+  installments: string
 }
 
 type CalendarEvent = {
@@ -85,6 +91,20 @@ type PaymentDayCardDetail = {
   availableBalance: number
   netBalance: number
   paymentDay: number | null
+  charges: CardCharge[]
+}
+
+type PurchaseHistoryItem = {
+  id: string
+  cardId: string
+  cardLabel: string
+  concept: string
+  date: string
+  amount: number
+  totalInstallments: number
+  paidInstallments: number
+  pendingInstallments: number
+  isGroupedInstallment: boolean
   charges: CardCharge[]
 }
 
@@ -188,6 +208,10 @@ const normalizeCharges = (items: unknown[]): CardCharge[] => {
     )
     .map((item) => ({
       ...item,
+      dueDate: typeof item.dueDate === 'string' ? item.dueDate : undefined,
+      purchaseGroupId: typeof item.purchaseGroupId === 'string' ? item.purchaseGroupId : undefined,
+      installmentNumber: Number.isInteger(item.installmentNumber) ? item.installmentNumber : undefined,
+      installmentTotal: Number.isInteger(item.installmentTotal) ? item.installmentTotal : undefined,
       paid: typeof item.paid === 'boolean' ? item.paid : false,
     }))
     .sort((a, b) => b.date.localeCompare(a.date))
@@ -235,6 +259,8 @@ const initialChargeForm = (cards: CreditCardAccount[]): ChargeFormState => ({
   concept: '',
   amount: '',
   date: toDateInput(today),
+  purchaseType: 'single',
+  installments: '3',
 })
 
 const loadCards = (): CreditCardAccount[] => {
@@ -263,6 +289,9 @@ const loadThemeMode = (): ThemeMode => {
 const getCardDisplayName = (card: CreditCardAccount) =>
   card.nickname.trim().length > 0 ? `${card.bankName} · ${card.nickname}` : card.bankName
 
+const normalizeInstallmentConcept = (concept: string) =>
+  concept.replace(/\s+\(Cuota\s+\d+\/\d+\)$/i, '').trim()
+
 const getDueDateForMonth = (card: CreditCardAccount, monthDate: Date) =>
   toCalendarDate(monthDate.getFullYear(), monthDate.getMonth(), card.paymentDay)
 
@@ -276,6 +305,22 @@ const getDueDateForCharge = (card: CreditCardAccount, chargeDateText: string) =>
 
   const paymentMonth = new Date(closingMonth.getFullYear(), closingMonth.getMonth() + 1, 1, 12, 0, 0, 0)
   return toCalendarDate(paymentMonth.getFullYear(), paymentMonth.getMonth(), card.paymentDay)
+}
+
+const getInstallmentDueDate = (firstDueDate: Date, installmentIndex: number, paymentDay: number) => {
+  const paymentMonth = new Date(firstDueDate.getFullYear(), firstDueDate.getMonth() + installmentIndex, 1, 12, 0, 0, 0)
+  return toCalendarDate(paymentMonth.getFullYear(), paymentMonth.getMonth(), paymentDay)
+}
+
+const splitAmountByInstallments = (amount: number, installments: number) => {
+  const totalCents = Math.round(amount * 100)
+  const baseCents = Math.floor(totalCents / installments)
+  const remainderCents = totalCents - baseCents * installments
+
+  return Array.from({ length: installments }, (_, index) => {
+    const cents = baseCents + (index < remainderCents ? 1 : 0)
+    return cents / 100
+  })
 }
 
 const buildCalendarMatrix = (monthDate: Date) => {
@@ -308,11 +353,13 @@ const App = () => {
   const [isCardModalOpen, setIsCardModalOpen] = useState(false)
   const [isChargeModalOpen, setIsChargeModalOpen] = useState(false)
   const [isPurchasesModalOpen, setIsPurchasesModalOpen] = useState(false)
+  const [isZeroRatePurchasesModalOpen, setIsZeroRatePurchasesModalOpen] = useState(false)
   const [isManageCardsModalOpen, setIsManageCardsModalOpen] = useState(false)
   const [selectedPaymentDateText, setSelectedPaymentDateText] = useState<string | null>(null)
   const [isSavingCard, setIsSavingCard] = useState(false)
   const [isSavingCharge, setIsSavingCharge] = useState(false)
   const [activePayingCardId, setActivePayingCardId] = useState<string | null>(null)
+  const [isZeroRateFlow, setIsZeroRateFlow] = useState(false)
   const [isUserAuthenticated, setIsUserAuthenticated] = useState(Boolean(auth?.currentUser))
   const [currentUserLabel, setCurrentUserLabel] = useState<string | null>(auth?.currentUser?.email ?? null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
@@ -334,6 +381,7 @@ const App = () => {
     isCardModalOpen ||
     isChargeModalOpen ||
     isPurchasesModalOpen ||
+    isZeroRatePurchasesModalOpen ||
     isManageCardsModalOpen ||
     selectedPaymentDateText !== null
 
@@ -481,7 +529,7 @@ const App = () => {
       document.body.style.overflow = previousOverflow
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [isAnyModalOpen, selectedPaymentDateText, isPurchasesModalOpen, isManageCardsModalOpen, isChargeModalOpen, isCardModalOpen, cards])
+  }, [isAnyModalOpen, selectedPaymentDateText, isPurchasesModalOpen, isZeroRatePurchasesModalOpen, isManageCardsModalOpen, isChargeModalOpen, isCardModalOpen, cards])
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEYS.cards, JSON.stringify(cards))
@@ -549,7 +597,9 @@ const App = () => {
           return null
         }
 
-        const dueDate = getDueDateForCharge(card, charge.date)
+        const dueDate = charge.dueDate
+          ? new Date(`${charge.dueDate}T12:00:00`)
+          : getDueDateForCharge(card, charge.date)
 
         return {
           charge,
@@ -667,35 +717,76 @@ const App = () => {
     return Array.from(byDate.values()).sort((a, b) => a.dateText.localeCompare(b.dateText))
   }, [cards, selectedMonthDate])
 
-  const recentCharges = useMemo(() => {
-    return [...charges]
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .map((charge) => {
-        const card = cards.find((item) => item.id === charge.cardId)
+  const purchaseHistoryItems = useMemo<PurchaseHistoryItem[]>(() => {
+    const groups = new Map<string, PurchaseHistoryItem>()
 
-        return {
-          ...charge,
-          cardLabel: card ? getCardDisplayName(card) : 'Tarjeta eliminada',
+    ;[...charges]
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .forEach((charge) => {
+        const card = cards.find((item) => item.id === charge.cardId)
+        const cardLabel = card ? getCardDisplayName(card) : 'Tarjeta eliminada'
+        const groupKey = charge.purchaseGroupId ? `group-${charge.purchaseGroupId}` : `single-${charge.id}`
+        const isGroupedInstallment = Boolean(charge.purchaseGroupId)
+        const concept = isGroupedInstallment ? normalizeInstallmentConcept(charge.concept) : charge.concept
+
+        const existing = groups.get(groupKey)
+        if (!existing) {
+          groups.set(groupKey, {
+            id: groupKey,
+            cardId: charge.cardId,
+            cardLabel,
+            concept,
+            date: charge.date,
+            amount: charge.amount,
+            totalInstallments: charge.installmentTotal ?? 1,
+            paidInstallments: charge.paid ? 1 : 0,
+            pendingInstallments: charge.paid ? 0 : 1,
+            isGroupedInstallment,
+            charges: [charge],
+          })
+          return
+        }
+
+        existing.amount += charge.amount
+        existing.paidInstallments += charge.paid ? 1 : 0
+        existing.pendingInstallments += charge.paid ? 0 : 1
+        existing.totalInstallments = charge.installmentTotal
+          ? Math.max(existing.totalInstallments, charge.installmentTotal)
+          : existing.totalInstallments + 1
+        existing.charges.push(charge)
+
+        if (charge.date > existing.date) {
+          existing.date = charge.date
         }
       })
+
+    return Array.from(groups.values()).sort((a, b) => b.date.localeCompare(a.date))
   }, [cards, charges])
 
-  const filteredRecentCharges = useMemo(() => {
+  const filteredPurchaseHistoryItems = useMemo(() => {
     const searchTerm = purchaseSearch.trim().toLowerCase()
     if (!searchTerm) {
-      return recentCharges
+      return purchaseHistoryItems
     }
 
-    return recentCharges.filter((charge) =>
-      charge.concept.toLowerCase().includes(searchTerm) ||
-      charge.cardLabel.toLowerCase().includes(searchTerm) ||
-      charge.date.includes(searchTerm),
+    return purchaseHistoryItems.filter((item) =>
+      item.concept.toLowerCase().includes(searchTerm) ||
+      item.cardLabel.toLowerCase().includes(searchTerm) ||
+      item.date.includes(searchTerm),
     )
-  }, [recentCharges, purchaseSearch])
+  }, [purchaseHistoryItems, purchaseSearch])
 
-  const filteredChargesTotal = useMemo(() => {
-    return filteredRecentCharges.reduce((sum, charge) => sum + charge.amount, 0)
-  }, [filteredRecentCharges])
+  const filteredPurchaseHistoryTotal = useMemo(() => {
+    return filteredPurchaseHistoryItems.reduce((sum, item) => sum + item.amount, 0)
+  }, [filteredPurchaseHistoryItems])
+
+  const zeroRatePurchaseItems = useMemo(() => {
+    return purchaseHistoryItems.filter((item) => item.isGroupedInstallment)
+  }, [purchaseHistoryItems])
+
+  const zeroRatePurchaseTotal = useMemo(() => {
+    return zeroRatePurchaseItems.reduce((sum, item) => sum + item.amount, 0)
+  }, [zeroRatePurchaseItems])
 
   const monthlyCardPayments = useMemo(() => {
     return paymentEvents
@@ -787,6 +878,18 @@ const App = () => {
 
   const openChargeModal = () => {
     setChargeForm(initialChargeForm(cards))
+    setIsZeroRateFlow(false)
+    setIsChargeModalOpen(true)
+  }
+
+  const openZeroRateChargeModal = () => {
+    const initialForm = initialChargeForm(cards)
+    setChargeForm({
+      ...initialForm,
+      purchaseType: 'zero-rate',
+      installments: initialForm.installments || '3',
+    })
+    setIsZeroRateFlow(true)
     setIsChargeModalOpen(true)
   }
 
@@ -795,14 +898,23 @@ const App = () => {
     setIsPurchasesModalOpen(true)
   }
 
+  const openZeroRatePurchasesModal = () => {
+    setIsZeroRatePurchasesModalOpen(true)
+  }
+
   const closeChargeModal = () => {
     setIsChargeModalOpen(false)
+    setIsZeroRateFlow(false)
     setChargeForm(initialChargeForm(cards))
   }
 
   const closePurchasesModal = () => {
     setPurchaseSearch('')
     setIsPurchasesModalOpen(false)
+  }
+
+  const closeZeroRatePurchasesModal = () => {
+    setIsZeroRatePurchasesModalOpen(false)
   }
 
   const openManageCardsModal = () => {
@@ -930,9 +1042,19 @@ const App = () => {
     const cardId = chargeForm.cardId
     const concept = chargeForm.concept.trim()
     const amount = Number(chargeForm.amount)
+    const isZeroRatePurchase = isZeroRateFlow || chargeForm.purchaseType === 'zero-rate'
+    const installments = isZeroRatePurchase ? Number(chargeForm.installments) : 1
 
     if (!cardId || concept.length === 0 || !Number.isFinite(amount) || amount <= 0 || !chargeForm.date) {
       window.alert('Completa tarjeta, concepto, monto y fecha para registrar el gasto.')
+      return
+    }
+
+    if (
+      isZeroRatePurchase &&
+      (!Number.isInteger(installments) || installments < 2 || installments > 48)
+    ) {
+      window.alert('Para tasa cero, registra un número de cuotas entre 2 y 48.')
       return
     }
 
@@ -956,23 +1078,39 @@ const App = () => {
     setIsSavingCharge(true)
 
     try {
-      const newCharge: CardCharge = {
-        id: generateId(),
-        ownerUid: currentUid,
-        cardId,
-        concept,
-        amount,
-        date: chargeForm.date,
-        paid: false,
-      }
+      const firstDueDate = getDueDateForCharge(targetCard, chargeForm.date)
+      const installmentAmounts = splitAmountByInstallments(amount, installments)
+      const purchaseGroupId = installments > 1 ? generateId() : undefined
+
+      const newCharges: CardCharge[] = installmentAmounts.map((installmentAmount, index) => {
+        const dueDate = getInstallmentDueDate(firstDueDate, index, targetCard.paymentDay)
+        const installmentLabel = installments > 1 ? ` (Cuota ${index + 1}/${installments})` : ''
+
+        return {
+          id: generateId(),
+          ownerUid: currentUid,
+          cardId,
+          concept: `${concept}${installmentLabel}`,
+          amount: installmentAmount,
+          date: chargeForm.date,
+          dueDate: toDateInput(dueDate),
+          purchaseGroupId,
+          installmentNumber: installments > 1 ? index + 1 : undefined,
+          installmentTotal: installments > 1 ? installments : undefined,
+          paid: false,
+        }
+      })
 
       const nextBalance = Math.max(0, targetCard.balance - amount)
 
       if (isCloudSyncEnabled && db) {
         try {
-          const batch = writeBatch(db)
-          batch.set(doc(db, 'charges', newCharge.id), newCharge)
-          batch.update(doc(db, 'cards', cardId), { balance: nextBalance })
+          const firestore = db
+          const batch = writeBatch(firestore)
+          newCharges.forEach((charge) => {
+            batch.set(doc(firestore, 'charges', charge.id), charge)
+          })
+          batch.update(doc(firestore, 'cards', cardId), { balance: nextBalance })
           await batch.commit()
         } catch (error) {
           console.error('Error al guardar gasto en Firestore:', error)
@@ -981,7 +1119,7 @@ const App = () => {
         }
       }
 
-      setCharges((current) => [newCharge, ...current])
+      setCharges((current) => [...newCharges, ...current])
       setCards((current) =>
         current.map((card) =>
           card.id === cardId ? { ...card, balance: nextBalance } : card,
@@ -1055,6 +1193,57 @@ const App = () => {
     )
   }
 
+  const handleDeletePurchaseItem = async (item: PurchaseHistoryItem) => {
+    if (item.charges.length === 1) {
+      await handleDeleteCharge(item.charges[0])
+      return
+    }
+
+    const confirmed = window.confirm(
+      `¿Eliminar la compra "${item.concept}" con ${item.totalInstallments} cuotas registradas?`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    const targetCard = cards.find((card) => card.id === item.cardId)
+    const unpaidTotal = item.charges.filter((charge) => !charge.paid).reduce((sum, charge) => sum + charge.amount, 0)
+    const chargeIds = new Set(item.charges.map((charge) => charge.id))
+
+    if (isCloudSyncEnabled && db) {
+      try {
+        const firestore = db
+        const batch = writeBatch(firestore)
+
+        item.charges.forEach((charge) => {
+          batch.delete(doc(firestore, 'charges', charge.id))
+        })
+
+        if (targetCard && unpaidTotal > 0) {
+          batch.update(doc(firestore, 'cards', item.cardId), {
+            balance: Math.max(0, targetCard.balance + unpaidTotal),
+          })
+        }
+
+        await batch.commit()
+      } catch (error) {
+        console.error('Error al eliminar compra agrupada en Firestore:', error)
+        window.alert('No se pudo eliminar la compra en Firebase.')
+        return
+      }
+    }
+
+    setCharges((current) => current.filter((charge) => !chargeIds.has(charge.id)))
+
+    if (unpaidTotal > 0) {
+      setCards((current) =>
+        current.map((card) =>
+          card.id === item.cardId ? { ...card, balance: Math.max(0, card.balance + unpaidTotal) } : card,
+        ),
+      )
+    }
+  }
+
   const handlePayCardBalance = async (cardId: string, dueDateText?: string) => {
     const targetCard = cards.find((card) => card.id === cardId)
     if (!targetCard) {
@@ -1070,7 +1259,7 @@ const App = () => {
         return true
       }
 
-      const chargeDueDate = toDateInput(getDueDateForCharge(targetCard, charge.date))
+      const chargeDueDate = charge.dueDate ?? toDateInput(getDueDateForCharge(targetCard, charge.date))
       return chargeDueDate === dueDateText
     })
 
@@ -1151,6 +1340,7 @@ const App = () => {
       setIsCardModalOpen(false)
       setIsChargeModalOpen(false)
       setIsPurchasesModalOpen(false)
+      setIsZeroRatePurchasesModalOpen(false)
       setIsManageCardsModalOpen(false)
       setPurchaseSearch('')
       window.localStorage.removeItem(STORAGE_KEYS.cards)
@@ -1203,6 +1393,16 @@ const App = () => {
   }
 
   const isDarkTheme = themeMode === 'dark'
+  const zeroRateInstallments = Number(chargeForm.installments)
+  const zeroRateAmount = Number(chargeForm.amount)
+  const zeroRateInstallmentAmount =
+    chargeForm.purchaseType === 'zero-rate' &&
+    Number.isFinite(zeroRateAmount) &&
+    zeroRateAmount > 0 &&
+    Number.isInteger(zeroRateInstallments) &&
+    zeroRateInstallments > 0
+      ? zeroRateAmount / zeroRateInstallments
+      : 0
 
   const toggleThemeMode = () => {
     setThemeMode((current) => (current === 'light' ? 'dark' : 'light'))
@@ -1298,6 +1498,16 @@ const App = () => {
               >
                 <Settings2 size={16} />
                 Tarjetas
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={openZeroRatePurchasesModal}
+                aria-label="Registrar compra a tasa cero"
+                title="Registrar compra a tasa cero"
+              >
+                <Wallet size={16} />
+                Tasa cero
               </button>
               <button
                 type="button"
@@ -1680,14 +1890,14 @@ const App = () => {
 
       {isChargeModalOpen ? (
         <div
-          className={`modal-backdrop${isPurchasesModalOpen ? ' modal-backdrop-top-layer' : ''}`}
+          className={`modal-backdrop${isPurchasesModalOpen || isZeroRatePurchasesModalOpen ? ' modal-backdrop-top-layer' : ''}`}
           role="presentation"
         >
           <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <p className="eyebrow">Movimientos</p>
-                <h2>Registrar compra o gasto</h2>
+                <h2>{isZeroRateFlow ? 'Registrar compra a tasa cero' : 'Registrar compra o gasto'}</h2>
               </div>
               <button type="button" className="icon-button" onClick={closeChargeModal} aria-label="Cerrar modal">
                 <X size={16} />
@@ -1713,7 +1923,7 @@ const App = () => {
               </label>
 
               <label className="field wide">
-                <span>Concepto</span>
+                <span>{isZeroRateFlow ? 'Título' : 'Concepto'}</span>
                 <input
                   value={chargeForm.concept}
                   onChange={(event) => setChargeForm((current) => ({ ...current, concept: event.target.value }))}
@@ -1721,6 +1931,34 @@ const App = () => {
                   required
                 />
               </label>
+
+              {isZeroRateFlow ? (
+                <label className="field">
+                  <span>Cantidad de cuotas</span>
+                  <input
+                    type="number"
+                    min="2"
+                    max="48"
+                    step="1"
+                    value={chargeForm.installments}
+                    onChange={(event) => setChargeForm((current) => ({ ...current, installments: event.target.value }))}
+                    placeholder="Ej. 12"
+                    required
+                  />
+                </label>
+              ) : null}
+
+              {isZeroRateFlow ? (
+                <label className="field">
+                  <span>Cuota</span>
+                  <input
+                    type="text"
+                    value={zeroRateInstallmentAmount > 0 ? money.format(zeroRateInstallmentAmount) : ''}
+                    placeholder="$0,00"
+                    readOnly
+                  />
+                </label>
+              ) : null}
 
               <label className="field">
                 <span>Monto</span>
@@ -1747,7 +1985,7 @@ const App = () => {
 
               <div className="form-actions modal-actions">
                 <button type="submit" className="primary-button" disabled={isSavingCharge}>
-                  {isSavingCharge ? 'Guardando...' : 'Guardar gasto'}
+                  {isSavingCharge ? 'Guardando...' : isZeroRateFlow ? 'Guardar tasa cero' : 'Guardar gasto'}
                 </button>
               </div>
             </form>
@@ -1894,8 +2132,8 @@ const App = () => {
                 <h3>Compras registradas</h3>
               </div>
               <div className="detail-actions">
-                <span className="section-badge">{filteredRecentCharges.length} de {recentCharges.length}</span>
-                <span className="section-badge">{money.format(filteredChargesTotal)}</span>
+                <span className="section-badge">{filteredPurchaseHistoryItems.length} de {purchaseHistoryItems.length}</span>
+                <span className="section-badge">{money.format(filteredPurchaseHistoryTotal)}</span>
                 <button
                   type="button"
                   className="primary-button"
@@ -1918,7 +2156,7 @@ const App = () => {
               />
             </div>
 
-            {filteredRecentCharges.length === 0 ? (
+            {filteredPurchaseHistoryItems.length === 0 ? (
               <div className="empty-state compact">
                 <Banknote size={28} />
                 <p>{purchaseSearch.trim().length > 0 ? 'No hay compras que coincidan con la búsqueda.' : 'No hay compras registradas.'}</p>
@@ -1932,23 +2170,118 @@ const App = () => {
                       <th>Concepto</th>
                       <th>Fecha</th>
                       <th>Monto</th>
+                      <th>Cuotas</th>
                       <th>Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredRecentCharges.map((charge) => (
-                      <tr key={charge.id}>
-                        <td>{charge.cardLabel}</td>
-                        <td>{charge.concept}</td>
-                        <td>{charge.date}</td>
-                        <td>{money.format(charge.amount)}</td>
+                    {filteredPurchaseHistoryItems.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.cardLabel}</td>
+                        <td>{item.concept}</td>
+                        <td>{item.date}</td>
+                        <td>{money.format(item.amount)}</td>
+                        <td>{item.paidInstallments}/{item.totalInstallments}</td>
                         <td>
                           <div className="table-actions">
                             <button
                               type="button"
                               className="icon-button danger"
-                              onClick={() => handleDeleteCharge(charge)}
+                              onClick={() => {
+                                void handleDeletePurchaseItem(item)
+                              }}
                               aria-label="Eliminar gasto"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {isZeroRatePurchasesModalOpen ? (
+        <div
+          className={`modal-backdrop${isChargeModalOpen ? ' modal-backdrop-underlay' : ''}`}
+          role="presentation"
+        >
+          <section className="modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow">Tasa cero</p>
+                <h2>Gestionar compras a tasa cero</h2>
+              </div>
+              <button type="button" className="icon-button" onClick={closeZeroRatePurchasesModal} aria-label="Cerrar tasa cero">
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="section-head">
+              <div>
+                <p className="eyebrow">Historial</p>
+                <h3>Compras financiadas</h3>
+              </div>
+              <div className="detail-actions">
+                <span className="section-badge">{zeroRatePurchaseItems.length}</span>
+                <span className="section-badge">{money.format(zeroRatePurchaseTotal)}</span>
+                <button
+                  type="button"
+                  className="primary-button"
+                  onClick={() => {
+                    openZeroRateChargeModal()
+                  }}
+                >
+                  <Plus size={16} />
+                  Agregar tasa cero
+                </button>
+              </div>
+            </div>
+
+            {zeroRatePurchaseItems.length === 0 ? (
+              <div className="empty-state compact">
+                <Wallet size={28} />
+                <p>No hay compras a tasa cero registradas.</p>
+              </div>
+            ) : (
+              <div className="table-wrap">
+                <table className="cards-table" aria-label="Listado de compras a tasa cero">
+                  <thead>
+                    <tr>
+                      <th>Tarjeta</th>
+                      <th>Título</th>
+                      <th>Fecha</th>
+                      <th>Precio</th>
+                      <th>Cuotas</th>
+                      <th>Cuota</th>
+                      <th>Progreso</th>
+                      <th>Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {zeroRatePurchaseItems.map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.cardLabel}</td>
+                        <td>{item.concept}</td>
+                        <td>{item.date}</td>
+                        <td>{money.format(item.amount)}</td>
+                        <td>{item.totalInstallments}</td>
+                        <td>{money.format(item.amount / item.totalInstallments)}</td>
+                        <td>{item.paidInstallments}/{item.totalInstallments}</td>
+                        <td>
+                          <div className="table-actions">
+                            <button
+                              type="button"
+                              className="icon-button danger"
+                              onClick={() => {
+                                void handleDeletePurchaseItem(item)
+                              }}
+                              aria-label="Eliminar compra tasa cero"
                             >
                               <Trash2 size={16} />
                             </button>
