@@ -151,6 +151,14 @@ type CardAuditSummary = {
   charges: AuditChargeDetail[]
 }
 
+type PurchaseCardGroup = {
+  cardId: string
+  cardLabel: string
+  items: PurchaseHistoryItem[]
+  total: number
+  pendingInstallments: number
+}
+
 const today = new Date()
 
 const STORAGE_KEYS = {
@@ -451,6 +459,7 @@ const App = () => {
   const [loginEmail, setLoginEmail] = useState(defaultLoginEmail ?? '')
   const [loginPassword, setLoginPassword] = useState(defaultLoginPassword ?? '')
   const [purchaseSearch, setPurchaseSearch] = useState('')
+  const [purchaseCardFilter, setPurchaseCardFilter] = useState('all')
   const [themeMode, setThemeMode] = useState<ThemeMode>(() => loadThemeMode())
   const sessionMenuRef = useRef<HTMLDivElement | null>(null)
   const [cardForm, setCardForm] = useState<CardFormState>(() => initialCardForm())
@@ -898,16 +907,59 @@ const App = () => {
 
   const filteredPurchaseHistoryItems = useMemo(() => {
     const searchTerm = purchaseSearch.trim().toLowerCase()
-    if (!searchTerm) {
-      return purchaseHistoryItems
-    }
-
     return purchaseHistoryItems.filter((item) =>
-      item.concept.toLowerCase().includes(searchTerm) ||
-      item.cardLabel.toLowerCase().includes(searchTerm) ||
-      item.date.includes(searchTerm),
+      (purchaseCardFilter === 'all' || item.cardId === purchaseCardFilter) &&
+      (
+        searchTerm.length === 0 ||
+        item.concept.toLowerCase().includes(searchTerm) ||
+        item.cardLabel.toLowerCase().includes(searchTerm) ||
+        item.date.includes(searchTerm)
+      ),
     )
-  }, [purchaseHistoryItems, purchaseSearch])
+  }, [purchaseCardFilter, purchaseHistoryItems, purchaseSearch])
+
+  const purchaseCardFilterOptions = useMemo(() => {
+    const byCardId = new Map<string, string>()
+
+    purchaseHistoryItems.forEach((item) => {
+      if (!byCardId.has(item.cardId)) {
+        byCardId.set(item.cardId, item.cardLabel)
+      }
+    })
+
+    return Array.from(byCardId.entries())
+      .map(([id, label]) => ({ id, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'es', { sensitivity: 'base' }))
+  }, [purchaseHistoryItems])
+
+  const groupedPurchaseHistoryByCard = useMemo<PurchaseCardGroup[]>(() => {
+    const groups = filteredPurchaseHistoryItems.reduce<Map<string, PurchaseCardGroup>>((acc, item) => {
+      const existing = acc.get(item.cardId)
+
+      if (existing) {
+        existing.items.push(item)
+        existing.total += item.amount
+        existing.pendingInstallments += item.pendingInstallments
+        return acc
+      }
+
+      acc.set(item.cardId, {
+        cardId: item.cardId,
+        cardLabel: item.cardLabel,
+        items: [item],
+        total: item.amount,
+        pendingInstallments: item.pendingInstallments,
+      })
+      return acc
+    }, new Map())
+
+    return Array.from(groups.values())
+      .map((group) => ({
+        ...group,
+        items: [...group.items].sort((a, b) => b.date.localeCompare(a.date)),
+      }))
+      .sort((a, b) => b.total - a.total)
+  }, [filteredPurchaseHistoryItems])
 
   const filteredPurchaseHistoryTotal = useMemo(() => {
     return filteredPurchaseHistoryItems.reduce((sum, item) => sum + item.amount, 0)
@@ -1120,6 +1172,7 @@ const App = () => {
 
   const openPurchasesModal = () => {
     setPurchaseSearch('')
+    setPurchaseCardFilter('all')
     setIsPurchasesModalOpen(true)
   }
 
@@ -1135,6 +1188,7 @@ const App = () => {
 
   const closePurchasesModal = () => {
     setPurchaseSearch('')
+    setPurchaseCardFilter('all')
     setIsPurchasesModalOpen(false)
   }
 
@@ -2851,13 +2905,26 @@ const App = () => {
               </div>
             </div>
 
-            <div className="quick-search-row">
+            <div className="quick-search-grid">
               <input
                 className="quick-search-input"
                 value={purchaseSearch}
                 onChange={(event) => setPurchaseSearch(event.target.value)}
                 placeholder="Buscar por concepto, tarjeta o fecha"
               />
+
+              <select
+                className="quick-filter-select"
+                value={purchaseCardFilter}
+                onChange={(event) => setPurchaseCardFilter(event.target.value)}
+              >
+                <option value="all">Todas las tarjetas</option>
+                {purchaseCardFilterOptions.map((option) => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {filteredPurchaseHistoryItems.length === 0 ? (
@@ -2866,44 +2933,60 @@ const App = () => {
                 <p>{purchaseSearch.trim().length > 0 ? 'No hay compras que coincidan con la búsqueda.' : 'No hay compras registradas.'}</p>
               </div>
             ) : (
-              <div className="table-wrap">
-                <table className="cards-table" aria-label="Listado de compras">
-                  <thead>
-                    <tr>
-                      <th>Tarjeta</th>
-                      <th>Concepto</th>
-                      <th>Fecha</th>
-                      <th>Monto</th>
-                      <th>Cuotas</th>
-                      <th>Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredPurchaseHistoryItems.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.cardLabel}</td>
-                        <td>{item.concept}</td>
-                        <td>{item.date}</td>
-                        <td>{money.format(item.amount)}</td>
-                        <td>{getInstallmentProgressLabel(item)}</td>
-                        <td>
-                          <div className="table-actions">
-                            <button
-                              type="button"
-                              className="icon-button danger"
-                              onClick={() => {
-                                void handleDeletePurchaseItem(item)
-                              }}
-                              aria-label="Eliminar gasto"
-                            >
-                              <Trash2 size={16} />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="purchase-groups-list">
+                {groupedPurchaseHistoryByCard.map((group) => (
+                  <section key={group.cardId} className="purchase-card-group" style={getCardPastelStyle(group.cardId)}>
+                    <header className="purchase-card-group-head">
+                      <div>
+                        <p className="movement-meta">Tarjeta</p>
+                        <h4>{group.cardLabel}</h4>
+                      </div>
+                      <div className="purchase-card-group-metrics">
+                        <span className="section-badge">{group.items.length} compra{group.items.length === 1 ? '' : 's'}</span>
+                        <span className="section-badge">{money.format(group.total)}</span>
+                        <span className="section-badge">{group.pendingInstallments} cuota{group.pendingInstallments === 1 ? '' : 's'} pendiente{group.pendingInstallments === 1 ? '' : 's'}</span>
+                      </div>
+                    </header>
+
+                    <div className="table-wrap">
+                      <table className="cards-table" aria-label={`Listado de compras de ${group.cardLabel}`}>
+                        <thead>
+                          <tr>
+                            <th>Concepto</th>
+                            <th>Fecha</th>
+                            <th>Monto</th>
+                            <th>Cuotas</th>
+                            <th>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {group.items.map((item) => (
+                            <tr key={item.id}>
+                              <td>{item.concept}</td>
+                              <td>{item.date}</td>
+                              <td>{money.format(item.amount)}</td>
+                              <td>{getInstallmentProgressLabel(item)}</td>
+                              <td>
+                                <div className="table-actions">
+                                  <button
+                                    type="button"
+                                    className="icon-button danger"
+                                    onClick={() => {
+                                      void handleDeletePurchaseItem(item)
+                                    }}
+                                    aria-label="Eliminar gasto"
+                                  >
+                                    <Trash2 size={16} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </section>
+                ))}
               </div>
             )}
           </section>

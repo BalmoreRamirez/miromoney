@@ -1045,6 +1045,13 @@
   margin-bottom: 12px;
 }
 
+.quick-search-grid {
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+  gap: 10px;
+}
+
 .quick-search-input {
   width: 100%;
   min-height: 42px;
@@ -1060,6 +1067,78 @@
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(126, 92, 229, 0.14);
+}
+
+.quick-filter-select {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 2px solid rgba(49, 53, 72, 0.62);
+  background: #f7f6fb;
+  color: var(--ink);
+  font: inherit;
+}
+
+.quick-filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(126, 92, 229, 0.14);
+}
+
+.purchase-groups-list {
+  display: grid;
+  gap: 12px;
+  max-height: 52svh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.purchase-groups-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.purchase-groups-list::-webkit-scrollbar-thumb {
+  background: rgba(49, 53, 72, 0.28);
+  border-radius: 999px;
+}
+
+.purchase-card-group {
+  border-radius: 16px;
+  border: 2px solid var(--card-pastel-border, rgba(49, 53, 72, 0.6));
+  background: var(--card-pastel-bg, #f6f4fb);
+  color: var(--card-pastel-ink, var(--ink));
+  padding: 10px;
+  display: grid;
+  gap: 10px;
+}
+
+.purchase-card-group-head {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.purchase-card-group-head h4 {
+  margin: 4px 0 0;
+  font-size: 1.02rem;
+}
+
+.purchase-card-group-metrics {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.purchase-card-group .table-wrap {
+  border-radius: 14px;
+}
+
+.purchase-card-group .cards-table {
+  min-width: 600px;
 }
 
 .detail-charge-list {
@@ -1381,6 +1460,7 @@
 :root[data-theme='dark'] .field input,
 :root[data-theme='dark'] .field select,
 :root[data-theme='dark'] .quick-search-input,
+:root[data-theme='dark'] .quick-filter-select,
 :root[data-theme='dark'] .calendar-cell,
 :root[data-theme='dark'] .card-item,
 :root[data-theme='dark'] .charge-item,
@@ -1452,6 +1532,12 @@
 }
 
 :root[data-theme='dark'] .monthly-payment-item {
+  border-color: var(--card-pastel-border-dark, rgba(143, 152, 188, 0.55));
+  background: var(--card-pastel-bg-dark, #242e48);
+  color: var(--card-pastel-ink-dark, var(--ink));
+}
+
+:root[data-theme='dark'] .purchase-card-group {
   border-color: var(--card-pastel-border-dark, rgba(143, 152, 188, 0.55));
   background: var(--card-pastel-bg-dark, #242e48);
   color: var(--card-pastel-ink-dark, var(--ink));
@@ -1614,6 +1700,19 @@
 
   .monthly-payments-list {
     max-height: 320px;
+  }
+
+  .quick-search-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .purchase-card-group-head {
+    flex-direction: column;
+    align-items: start;
+  }
+
+  .purchase-card-group-metrics {
+    justify-content: start;
   }
 
   .audit-summary-grid {
