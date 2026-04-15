@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { FormEvent } from 'react'
+import type { CSSProperties, FormEvent } from 'react'
 import './App.css'
 import {
   collection,
@@ -13,10 +13,12 @@ import {
   writeBatch,
 } from 'firebase/firestore'
 import { onAuthStateChanged, signInWithEmailAndPassword, signOut } from 'firebase/auth'
+import { jsPDF } from 'jspdf'
 import {
   Banknote,
   CalendarDays,
   CreditCard,
+  FileText,
   LogOut,
   Moon,
   Pencil,
@@ -108,6 +110,47 @@ type PurchaseHistoryItem = {
   charges: CardCharge[]
 }
 
+type CardPastelTone = {
+  lightBg: string
+  lightBorder: string
+  lightInk: string
+  darkBg: string
+  darkBorder: string
+  darkInk: string
+}
+
+type AuditChargeDetail = {
+  id: string
+  concept: string
+  date: string
+  dueDateText: string
+  amount: number
+  status: 'Pagado' | 'Pendiente'
+  supportType: 'Compra' | 'Tasa cero' | 'Sin respaldo'
+}
+
+type CardAuditSummary = {
+  card: CreditCardAccount
+  cardLabel: string
+  currentBalance: number
+  calculatedLimit: number
+  expectedBalance: number
+  reconciliationGap: number
+  isBalanced: boolean
+  totalCharges: number
+  paidTotal: number
+  unpaidTotal: number
+  pendingFromPurchases: number
+  pendingFromZeroRate: number
+  pendingWithoutSupport: number
+  paidCount: number
+  unpaidCount: number
+  pendingWithoutSupportCount: number
+  isPendingBacked: boolean
+  nextDueDateText: string | null
+  charges: AuditChargeDetail[]
+}
+
 const today = new Date()
 
 const STORAGE_KEYS = {
@@ -156,6 +199,27 @@ const parseSavedArray = <T,>(raw: string | null): T[] => {
     return Array.isArray(parsed) ? (parsed as T[]) : []
   } catch {
     return []
+  }
+}
+
+const getStableHash = (value: string) => {
+  let hash = 0
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) >>> 0
+  }
+
+  return hash
+}
+
+const buildCardPastelTone = (hue: number): CardPastelTone => {
+  return {
+    lightBg: `hsl(${hue} 62% 90%)`,
+    lightBorder: `hsl(${hue} 46% 72%)`,
+    lightInk: `hsl(${hue} 40% 28%)`,
+    darkBg: `hsl(${hue} 34% 30% / 0.44)`,
+    darkBorder: `hsl(${hue} 52% 70% / 0.56)`,
+    darkInk: `hsl(${hue} 74% 92%)`,
   }
 }
 
@@ -335,6 +399,9 @@ const splitAmountByInstallments = (amount: number, installments: number) => {
   })
 }
 
+const toCents = (value: number) => Math.round(value * 100)
+const fromCents = (value: number) => value / 100
+
 const buildCalendarMatrix = (monthDate: Date) => {
   const year = monthDate.getFullYear()
   const monthIndex = monthDate.getMonth()
@@ -367,6 +434,9 @@ const App = () => {
   const [isPurchasesModalOpen, setIsPurchasesModalOpen] = useState(false)
   const [isZeroRatePurchasesModalOpen, setIsZeroRatePurchasesModalOpen] = useState(false)
   const [isManageCardsModalOpen, setIsManageCardsModalOpen] = useState(false)
+  const [isAuditModalOpen, setIsAuditModalOpen] = useState(false)
+  const [auditCardId, setAuditCardId] = useState('')
+  const [isExportingAudit, setIsExportingAudit] = useState(false)
   const [selectedPaymentDateText, setSelectedPaymentDateText] = useState<string | null>(null)
   const [isSavingCard, setIsSavingCard] = useState(false)
   const [isSavingCharge, setIsSavingCharge] = useState(false)
@@ -395,6 +465,7 @@ const App = () => {
     isPurchasesModalOpen ||
     isZeroRatePurchasesModalOpen ||
     isManageCardsModalOpen ||
+    isAuditModalOpen ||
     selectedPaymentDateText !== null
 
   useEffect(() => {
@@ -574,6 +645,19 @@ const App = () => {
     }
   }, [cards, chargeForm.cardId])
 
+  useEffect(() => {
+    if (cards.length === 0) {
+      if (auditCardId !== '') {
+        setAuditCardId('')
+      }
+      return
+    }
+
+    if (!cards.some((card) => card.id === auditCardId)) {
+      setAuditCardId(cards[0].id)
+    }
+  }, [auditCardId, cards])
+
   const cardChargesMap = useMemo(() => {
     return charges.reduce<Record<string, CardCharge[]>>((acc, charge) => {
       if (!acc[charge.cardId]) {
@@ -584,6 +668,43 @@ const App = () => {
       return acc
     }, {})
   }, [charges])
+
+  const cardPastelById = useMemo(() => {
+    const sortedCards = [...cards].sort((a, b) => a.id.localeCompare(b.id))
+    const usedHues = new Set<number>()
+
+    return sortedCards.reduce<Map<string, CardPastelTone>>((acc, card) => {
+      const baseHue = getStableHash(card.id) % 360
+      let hue = baseHue
+      let attempts = 0
+
+      while (usedHues.has(hue) && attempts < 360) {
+        hue = (baseHue + (attempts + 1) * 37) % 360
+        attempts += 1
+      }
+
+      usedHues.add(hue)
+      acc.set(card.id, buildCardPastelTone(hue))
+      return acc
+    }, new Map())
+  }, [cards])
+
+  const getCardPastelStyle = (cardId: string): CSSProperties => {
+    const tone = cardPastelById.get(cardId)
+
+    if (!tone) {
+      return {}
+    }
+
+    return {
+      '--card-pastel-bg': tone.lightBg,
+      '--card-pastel-border': tone.lightBorder,
+      '--card-pastel-ink': tone.lightInk,
+      '--card-pastel-bg-dark': tone.darkBg,
+      '--card-pastel-border-dark': tone.darkBorder,
+      '--card-pastel-ink-dark': tone.darkInk,
+    } as CSSProperties
+  }
 
   const unpaidCardChargesMap = useMemo(() => {
     return charges.reduce<Record<string, CardCharge[]>>((acc, charge) => {
@@ -860,6 +981,90 @@ const App = () => {
     })
   }, [cards, unpaidChargesWithDue, selectedPaymentEvent])
 
+  const selectedAuditCard = useMemo(() => {
+    if (!auditCardId) {
+      return null
+    }
+
+    return cards.find((card) => card.id === auditCardId) ?? null
+  }, [auditCardId, cards])
+
+  const selectedAuditSummary = useMemo<CardAuditSummary | null>(() => {
+    if (!selectedAuditCard) {
+      return null
+    }
+
+    const cardCharges = charges
+      .filter((charge) => charge.cardId === selectedAuditCard.id)
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+
+    const auditCharges: AuditChargeDetail[] = cardCharges.map((charge) => {
+      const supportType: AuditChargeDetail['supportType'] = charge.purchaseGroupId || (charge.installmentTotal ?? 1) > 1
+        ? 'Tasa cero'
+        : charge.concept.trim().length > 0
+          ? 'Compra'
+          : 'Sin respaldo'
+
+      return {
+        id: charge.id,
+        concept: charge.concept,
+        date: charge.date,
+        dueDateText: charge.dueDate ?? toDateInput(getDueDateForCharge(selectedAuditCard, charge.date)),
+        amount: charge.amount,
+        status: charge.paid ? 'Pagado' : 'Pendiente',
+        supportType,
+      }
+    })
+
+    const paidTotalCents = auditCharges
+      .filter((charge) => charge.status === 'Pagado')
+      .reduce((sum, charge) => sum + toCents(charge.amount), 0)
+    const pendingCharges = auditCharges.filter((charge) => charge.status === 'Pendiente')
+    const pendingPurchaseCents = pendingCharges
+      .filter((charge) => charge.supportType === 'Compra')
+      .reduce((sum, charge) => sum + toCents(charge.amount), 0)
+    const pendingZeroRateCents = pendingCharges
+      .filter((charge) => charge.supportType === 'Tasa cero')
+      .reduce((sum, charge) => sum + toCents(charge.amount), 0)
+    const pendingWithoutSupportCents = pendingCharges
+      .filter((charge) => charge.supportType === 'Sin respaldo')
+      .reduce((sum, charge) => sum + toCents(charge.amount), 0)
+    const unpaidTotalCents = pendingPurchaseCents + pendingZeroRateCents
+    const totalPendingCents = unpaidTotalCents + pendingWithoutSupportCents
+    const totalChargesCents = paidTotalCents + totalPendingCents
+    const currentBalanceCents = toCents(selectedAuditCard.balance)
+    const calculatedLimitCents = currentBalanceCents + totalPendingCents
+    const expectedBalanceCents = calculatedLimitCents - totalPendingCents
+    const reconciliationGapCents = currentBalanceCents - expectedBalanceCents
+    const isPendingBacked = pendingWithoutSupportCents === 0
+    const nextDueDateText = auditCharges
+      .filter((charge) => charge.status === 'Pendiente')
+      .map((charge) => charge.dueDateText)
+      .sort((a, b) => a.localeCompare(b))[0] ?? null
+
+    return {
+      card: selectedAuditCard,
+      cardLabel: getCardDisplayName(selectedAuditCard),
+      currentBalance: fromCents(currentBalanceCents),
+      calculatedLimit: fromCents(calculatedLimitCents),
+      expectedBalance: fromCents(expectedBalanceCents),
+      reconciliationGap: fromCents(reconciliationGapCents),
+      isBalanced: Math.abs(reconciliationGapCents) <= 1 && isPendingBacked,
+      totalCharges: fromCents(totalChargesCents),
+      paidTotal: fromCents(paidTotalCents),
+      unpaidTotal: fromCents(unpaidTotalCents),
+      pendingFromPurchases: fromCents(pendingPurchaseCents),
+      pendingFromZeroRate: fromCents(pendingZeroRateCents),
+      pendingWithoutSupport: fromCents(pendingWithoutSupportCents),
+      paidCount: auditCharges.filter((charge) => charge.status === 'Pagado').length,
+      unpaidCount: auditCharges.filter((charge) => charge.status === 'Pendiente').length,
+      pendingWithoutSupportCount: pendingCharges.filter((charge) => charge.supportType === 'Sin respaldo').length,
+      isPendingBacked,
+      nextDueDateText,
+      charges: auditCharges,
+    }
+  }, [charges, selectedAuditCard])
+
   const hasRelatedTransactions = (cardId: string) => {
     return (cardChargesMap[cardId]?.length ?? 0) > 0
   }
@@ -943,6 +1148,18 @@ const App = () => {
 
   const closeManageCardsModal = () => {
     setIsManageCardsModalOpen(false)
+  }
+
+  const openAuditModal = () => {
+    if (cards.length > 0 && !auditCardId) {
+      setAuditCardId(cards[0].id)
+    }
+
+    setIsAuditModalOpen(true)
+  }
+
+  const closeAuditModal = () => {
+    setIsAuditModalOpen(false)
   }
 
   const openPaymentDetailModal = (dateText: string) => {
@@ -1420,6 +1637,293 @@ const App = () => {
     setSelectedMonth(toMonthInput(nextMonth))
   }
 
+  const handleExportAuditPdf = () => {
+    if (!selectedAuditSummary) {
+      window.alert('Selecciona una tarjeta para exportar la auditoria.')
+      return
+    }
+
+    setIsExportingAudit(true)
+
+    try {
+      const pdf = new jsPDF({ unit: 'pt', format: 'a4' })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const left = 38
+      const right = 38
+      const contentWidth = pageWidth - left - right
+      const footerStart = pageHeight - 34
+      const lineColor = [215, 220, 230] as const
+      const textColor = [33, 40, 56] as const
+      const mutedColor = [111, 124, 145] as const
+      let y = 86
+
+      const setBodyColor = () => {
+        pdf.setTextColor(textColor[0], textColor[1], textColor[2])
+      }
+
+      const drawPageChrome = (isFirstPage: boolean) => {
+        pdf.setFillColor(45, 55, 79)
+        pdf.rect(0, 0, pageWidth, 58, 'F')
+        pdf.setFillColor(168, 198, 255)
+        pdf.rect(0, 58, pageWidth, 3, 'F')
+
+        if (isFirstPage) {
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(18)
+          pdf.setTextColor(245, 247, 255)
+          pdf.text('Auditoria de tarjeta', left, 36)
+
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(11)
+          pdf.setTextColor(217, 226, 245)
+          pdf.text('MiroMoney', pageWidth - right, 36, { align: 'right' })
+        }
+
+        setBodyColor()
+      }
+
+      const addPage = (isFirstPage = false) => {
+        if (!isFirstPage) {
+          pdf.addPage()
+        }
+
+        drawPageChrome(isFirstPage)
+        y = 86
+      }
+
+      const ensureSpace = (height: number) => {
+        if (y + height <= footerStart) {
+          return
+        }
+
+        addPage()
+      }
+
+      const writeLine = (
+        text: string,
+        size = 11,
+        weight: 'normal' | 'bold' = 'normal',
+        spacing = 15,
+        color: readonly [number, number, number] = textColor,
+      ) => {
+        pdf.setFont('helvetica', weight)
+        pdf.setFontSize(size)
+        pdf.setTextColor(color[0], color[1], color[2])
+        const lines = pdf.splitTextToSize(text, contentWidth)
+
+        lines.forEach((line: string) => {
+          ensureSpace(spacing)
+          pdf.text(line, left, y)
+          y += spacing
+        })
+
+        setBodyColor()
+      }
+
+      const drawSectionTitle = (title: string) => {
+        ensureSpace(24)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(12)
+        setBodyColor()
+        pdf.text(title, left, y)
+        pdf.setDrawColor(lineColor[0], lineColor[1], lineColor[2])
+        pdf.line(left, y + 6, pageWidth - right, y + 6)
+        y += 20
+      }
+
+      const drawMetricCard = (
+        x: number,
+        yStart: number,
+        width: number,
+        height: number,
+        label: string,
+        value: string,
+        accent = false,
+      ) => {
+        if (accent) {
+          pdf.setFillColor(232, 244, 255)
+          pdf.setDrawColor(143, 181, 238)
+        } else {
+          pdf.setFillColor(245, 247, 252)
+          pdf.setDrawColor(215, 220, 230)
+        }
+
+        pdf.roundedRect(x, yStart, width, height, 10, 10, 'FD')
+
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(9)
+        pdf.setTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+        pdf.text(label, x + 10, yStart + 16)
+
+        pdf.setFont('helvetica', 'bold')
+        pdf.setFontSize(12)
+        setBodyColor()
+        pdf.text(value, x + 10, yStart + 36)
+      }
+
+      addPage(true)
+
+      writeLine(`Generado: ${new Date().toLocaleString('es-CO')}`, 10, 'normal', 13, mutedColor)
+      writeLine(`Tarjeta: ${selectedAuditSummary.cardLabel}`, 12, 'bold', 15)
+      writeLine(`Banco: ${selectedAuditSummary.card.bankName}`, 10, 'normal', 13)
+      writeLine(`Corte: Dia ${selectedAuditSummary.card.closingDay} | Pago: Dia ${selectedAuditSummary.card.paymentDay}`, 10, 'normal', 13)
+
+      y += 6
+      drawSectionTitle('Conciliacion de saldo')
+
+      const cardGap = 10
+      const metricCardWidth = (contentWidth - cardGap) / 2
+      const metricCardHeight = 50
+      const metricRows = [
+        [
+          { label: 'Saldo actual', value: money.format(selectedAuditSummary.currentBalance), accent: true },
+          { label: 'Deuda pendiente respaldada', value: money.format(selectedAuditSummary.unpaidTotal), accent: false },
+        ],
+        [
+          { label: 'Cupo calculado', value: money.format(selectedAuditSummary.calculatedLimit), accent: false },
+          { label: 'Saldo esperado', value: money.format(selectedAuditSummary.expectedBalance), accent: false },
+        ],
+        [
+          { label: 'Pendiente por compras', value: money.format(selectedAuditSummary.pendingFromPurchases), accent: false },
+          { label: 'Pendiente por tasa cero', value: money.format(selectedAuditSummary.pendingFromZeroRate), accent: false },
+        ],
+      ]
+
+      metricRows.forEach((row) => {
+        ensureSpace(metricCardHeight + 10)
+
+        row.forEach((metric, index) => {
+          drawMetricCard(
+            left + index * (metricCardWidth + cardGap),
+            y,
+            metricCardWidth,
+            metricCardHeight,
+            metric.label,
+            metric.value,
+            metric.accent,
+          )
+        })
+
+        y += metricCardHeight + 10
+      })
+
+      ensureSpace(72)
+      if (selectedAuditSummary.isBalanced) {
+        pdf.setFillColor(228, 247, 237)
+        pdf.setDrawColor(124, 193, 153)
+      } else {
+        pdf.setFillColor(255, 239, 224)
+        pdf.setDrawColor(235, 172, 115)
+      }
+      pdf.roundedRect(left, y, contentWidth, 64, 10, 10, 'FD')
+      pdf.setFont('helvetica', 'bold')
+      pdf.setFontSize(12)
+      setBodyColor()
+      pdf.text(`Estado de auditoria: ${selectedAuditSummary.isBalanced ? 'CUADRA' : 'REVISAR DIFERENCIA'}`, left + 12, y + 20)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setFontSize(10)
+      pdf.text(`Diferencia de conciliacion: ${money.format(selectedAuditSummary.reconciliationGap)}`, left + 12, y + 36)
+      pdf.text(`Respaldo pendiente: ${selectedAuditSummary.isPendingBacked ? 'Compra/Tasa cero validado' : 'Hay pendientes sin respaldo'}`, left + 12, y + 49)
+      y += 76
+
+      drawSectionTitle('Totales de movimientos')
+      writeLine(`Movimientos registrados: ${selectedAuditSummary.charges.length}`, 10, 'normal', 13)
+      writeLine(`Total cargos: ${money.format(selectedAuditSummary.totalCharges)}`, 10, 'normal', 13)
+      writeLine(`Total pagado (${selectedAuditSummary.paidCount}): ${money.format(selectedAuditSummary.paidTotal)}`, 10, 'normal', 13)
+      writeLine(`Deuda pendiente respaldada (${selectedAuditSummary.unpaidCount}): ${money.format(selectedAuditSummary.unpaidTotal)}`, 10, 'normal', 13)
+      writeLine(`Pendiente por compras: ${money.format(selectedAuditSummary.pendingFromPurchases)}`, 10, 'normal', 13)
+      writeLine(`Pendiente por tasa cero: ${money.format(selectedAuditSummary.pendingFromZeroRate)}`, 10, 'normal', 13)
+      if (selectedAuditSummary.pendingWithoutSupport > 0) {
+        writeLine(
+          `Pendiente sin respaldo (${selectedAuditSummary.pendingWithoutSupportCount}): ${money.format(selectedAuditSummary.pendingWithoutSupport)}`,
+          10,
+          'bold',
+          13,
+          [163, 51, 42],
+        )
+      }
+      writeLine(`Proximo vencimiento pendiente: ${selectedAuditSummary.nextDueDateText ?? 'Sin pendientes'}`, 10, 'normal', 13)
+
+      y += 6
+      drawSectionTitle('Detalle de movimientos')
+
+      if (selectedAuditSummary.charges.length === 0) {
+        writeLine('Sin movimientos para esta tarjeta.', 10, 'normal', 13, mutedColor)
+      } else {
+        selectedAuditSummary.charges.forEach((charge, index) => {
+          const conceptLines = pdf.splitTextToSize(charge.concept, contentWidth - 26) as string[]
+          const rowHeight = 50 + Math.max(0, conceptLines.length - 1) * 10
+          ensureSpace(rowHeight + 10)
+
+          if (index % 2 === 0) {
+            pdf.setFillColor(248, 250, 255)
+          } else {
+            pdf.setFillColor(242, 246, 252)
+          }
+          pdf.setDrawColor(220, 226, 236)
+          pdf.roundedRect(left, y, contentWidth, rowHeight, 9, 9, 'FD')
+
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(10)
+          setBodyColor()
+          pdf.text(`#${index + 1}  ${charge.date}  |  Vence ${charge.dueDateText}  |  ${charge.supportType}`, left + 12, y + 18)
+
+          if (charge.status === 'Pagado') {
+            pdf.setFillColor(227, 246, 236)
+            pdf.setDrawColor(139, 205, 167)
+          } else {
+            pdf.setFillColor(255, 240, 224)
+            pdf.setDrawColor(238, 185, 132)
+          }
+          pdf.roundedRect(left + contentWidth - 156, y + 8, 66, 16, 8, 8, 'FD')
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(8)
+          setBodyColor()
+          pdf.text(charge.status, left + contentWidth - 123, y + 19, { align: 'center' })
+
+          pdf.setFont('helvetica', 'bold')
+          pdf.setFontSize(10)
+          setBodyColor()
+          pdf.text(money.format(charge.amount), left + contentWidth - 12, y + 19, { align: 'right' })
+
+          pdf.setFont('helvetica', 'normal')
+          pdf.setFontSize(9)
+          pdf.setTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+          let conceptY = y + 36
+          conceptLines.forEach((line) => {
+            pdf.text(line, left + 12, conceptY)
+            conceptY += 10
+          })
+
+          setBodyColor()
+          y += rowHeight + 8
+        })
+      }
+
+      const totalPages = pdf.getNumberOfPages()
+      for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+        pdf.setPage(pageNumber)
+        pdf.setDrawColor(lineColor[0], lineColor[1], lineColor[2])
+        pdf.line(left, footerStart - 6, pageWidth - right, footerStart - 6)
+        pdf.setFont('helvetica', 'normal')
+        pdf.setFontSize(9)
+        pdf.setTextColor(mutedColor[0], mutedColor[1], mutedColor[2])
+        pdf.text('Reporte de auditoria generado por MiroMoney', left, pageHeight - 16)
+        pdf.text(`Pagina ${pageNumber} de ${totalPages}`, pageWidth - right, pageHeight - 16, { align: 'right' })
+      }
+
+      const safeLabel = selectedAuditSummary.cardLabel
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/gi, '-')
+        .replace(/(^-|-$)/g, '') || 'tarjeta'
+
+      pdf.save(`auditoria-${safeLabel}-${toDateInput(new Date())}.pdf`)
+    } finally {
+      setIsExportingAudit(false)
+    }
+  }
+
   const isDarkTheme = themeMode === 'dark'
   const zeroRateInstallments = Number(chargeForm.installments)
   const zeroRateAmount = Number(chargeForm.amount)
@@ -1500,7 +2004,7 @@ const App = () => {
         <section className="hero-panel">
           <div className="hero-content">
             <p className="eyebrow">Gestión de tarjetas</p>
-            <h1>MiroMoney Cards</h1>
+            <h1>MiroMoney</h1>
             <p className="hero-copy">
               Controla tus tarjetas de crédito, registra cada compra o gasto, y visualiza
               tus pagos próximos en un calendario claro.
@@ -1536,6 +2040,16 @@ const App = () => {
               >
                 <Wallet size={16} />
                 Tasa cero
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={openAuditModal}
+                aria-label="Auditoria de tarjeta"
+                title="Auditoria de tarjeta"
+              >
+                <FileText size={16} />
+                Auditoria
               </button>
               <button
                 type="button"
@@ -1660,172 +2174,330 @@ const App = () => {
                       </div>
                       {cutoffForDay ? (
                         <div
-                          className="calendar-cutoff"
+                          className="calendar-entry calendar-cutoff"
                           title={cutoffForDay.cards.map((card) => card.label).join(', ')}
                         >
                           <strong>Corte</strong>
                           <small>{cutoffForDay.cards.length} tarjeta{cutoffForDay.cards.length === 1 ? '' : 's'}</small>
+                          <div className="calendar-card-tags">
+                            {cutoffForDay.cards.map((card) => (
+                              <span
+                                key={`cutoff-${dateText}-${card.id}`}
+                                className="calendar-card-tag"
+                                style={getCardPastelStyle(card.id)}
+                              >
+                                {card.label}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       ) : null}
                       {eventsForDay ? (
                         <button
                           type="button"
-                          className="calendar-event calendar-event-button"
+                          className="calendar-entry calendar-event calendar-entry-button"
                           onClick={() => openPaymentDetailModal(eventsForDay.dateText)}
                         >
-                          <strong>{money.format(eventsForDay.total)}</strong>
-                          <small>{eventsForDay.cards.length} pago{eventsForDay.cards.length === 1 ? '' : 's'}</small>
+                          <strong>Pago</strong>
+                          <small>{money.format(eventsForDay.total)}</small>
+                          <div className="calendar-card-tags">
+                            {eventsForDay.cards.map((card) => (
+                              <span
+                                key={`payment-${dateText}-${card.id}`}
+                                className="calendar-card-tag"
+                                style={getCardPastelStyle(card.id)}
+                              >
+                                {card.label}
+                              </span>
+                            ))}
+                          </div>
                         </button>
                       ) : null}
                     </div>
                   )
                 })}
+                </div>
+              </section>
+            </div>
+
+            <aside className="workspace-side">
+              <section className="panel">
+                <div className="section-head">
+                  <div>
+                    <p className="eyebrow">Resumen de gastos</p>
+                    <h2>Gastos por tarjeta</h2>
+                  </div>
+                  <span className="section-badge">{money.format(monthlyPaymentsTotal)}</span>
+                </div>
+
+                {monthlyCardPayments.length === 0 ? (
+                  <div className="empty-state compact">
+                    <CalendarDays size={28} />
+                    <p>No hay gastos registrados para mostrar en este resumen.</p>
+                  </div>
+                ) : (
+                  <div className="monthly-payments-list">
+                    {monthlyCardPayments.map((payment) => (
+                      <button
+                        type="button"
+                        className={`monthly-payment-item${payment.amount > 0 ? ' interactive' : ''}`}
+                        key={payment.id}
+                        style={getCardPastelStyle(payment.id)}
+                        onClick={() => {
+                          if (payment.amount > 0) {
+                            openPaymentDetailModal(toDateInput(payment.dueDate))
+                          }
+                        }}
+                      >
+                        <div>
+                          <p className="movement-meta">{payment.label}</p>
+                          <h3>{money.format(payment.amount)}</h3>
+                          <span>{payment.amount > 0 ? `Vence: ${toDateInput(payment.dueDate)}` : 'Sin gastos en este mes'}</span>
+                        </div>
+                        <div className="charge-right">
+                          <strong>Día {payment.dueDate.getDate()}</strong>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </section>
+            </aside>
+          </section>
+        </main>
+
+        {selectedPaymentEvent ? (
+          <div className="modal-backdrop" role="presentation" onClick={closePaymentDetailModal}>
+            <section className="modal-card modal-detail" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+              <div className="modal-header">
+                <div>
+                  <p className="eyebrow">Pagos del calendario</p>
+                  <h2>Detalle de pago · {formatLongDate(selectedPaymentEvent.dateText)}</h2>
+                </div>
+                <button type="button" className="icon-button" onClick={closePaymentDetailModal} aria-label="Cerrar detalle de pago">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="detail-grid">
+                <article className="detail-card highlight">
+                  <span>Total pendiente del día</span>
+                  <strong>{money.format(selectedPaymentEvent.total)}</strong>
+                </article>
+                <article className="detail-card">
+                  <span>Tarjetas con vencimiento</span>
+                  <strong>{selectedPaymentEvent.cards.length}</strong>
+                </article>
+                <article className="detail-card">
+                  <span>Compras relacionadas</span>
+                  <strong>{selectedPaymentCards.reduce((sum, card) => sum + card.charges.length, 0)}</strong>
+                </article>
+              </div>
+
+              <div className="payment-detail-list">
+                {selectedPaymentCards.map((paymentCard) => (
+                  <article key={paymentCard.id} className="payment-detail-card" style={getCardPastelStyle(paymentCard.id)}>
+                    <div className="detail-section-head">
+                      <div>
+                        <p className="movement-meta">{paymentCard.label}</p>
+                        <h3>{money.format(paymentCard.amount)}</h3>
+                      </div>
+                      <div className="detail-actions">
+                        <span className="section-badge">
+                          {paymentCard.paymentDay ? `Día ${paymentCard.paymentDay}` : 'Sin día'}
+                        </span>
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => {
+                            void handlePayCardBalance(paymentCard.id, selectedPaymentEvent.dateText)
+                          }}
+                          disabled={paymentCard.amount <= 0 || activePayingCardId === paymentCard.id}
+                        >
+                          {activePayingCardId === paymentCard.id ? 'Pagando...' : 'Pagar tarjeta'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="payment-balance-row">
+                      <article>
+                        <span>Saldo asignado</span>
+                        <strong>{money.format(paymentCard.assignedBalance)}</strong>
+                      </article>
+                      <article>
+                        <span>Deuda pendiente</span>
+                        <strong>{money.format(paymentCard.amount)}</strong>
+                      </article>
+                      <article>
+                        <span>Saldo - deuda</span>
+                        <strong>{money.format(paymentCard.netBalance)}</strong>
+                      </article>
+                    </div>
+
+                    {paymentCard.charges.length === 0 ? (
+                      <div className="empty-state compact">
+                        <p>Sin compras registradas para esta tarjeta.</p>
+                      </div>
+                    ) : (
+                      <div className="table-wrap">
+                        <table className="cards-table" aria-label="Detalle de compras por tarjeta">
+                          <thead>
+                            <tr>
+                              <th>Concepto</th>
+                              <th>Fecha</th>
+                              <th>Monto</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {paymentCard.charges.map((charge) => (
+                              <tr key={charge.id}>
+                                <td>{charge.concept}</td>
+                                <td>{charge.date}</td>
+                                <td>{money.format(charge.amount)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </article>
+                ))}
               </div>
             </section>
           </div>
+        ) : null}
 
-          <aside className="workspace-side">
-            <section className="panel">
-              <div className="section-head">
-                <div>
-                  <p className="eyebrow">Resumen de gastos</p>
-                  <h2>Gastos por tarjeta</h2>
-                </div>
-                <span className="section-badge">{money.format(monthlyPaymentsTotal)}</span>
-              </div>
-
-              {monthlyCardPayments.length === 0 ? (
-                <div className="empty-state compact">
-                  <CalendarDays size={28} />
-                  <p>No hay gastos registrados para mostrar en este resumen.</p>
-                </div>
-              ) : (
-                <div className="monthly-payments-list">
-                  {monthlyCardPayments.map((payment) => (
-                    <button
-                      type="button"
-                      className={`monthly-payment-item${payment.amount > 0 ? ' interactive' : ''}`}
-                      key={payment.id}
-                      onClick={() => {
-                        if (payment.amount > 0) {
-                          openPaymentDetailModal(toDateInput(payment.dueDate))
-                        }
-                      }}
-                    >
-                      <div>
-                        <p className="movement-meta">{payment.label}</p>
-                        <h3>{money.format(payment.amount)}</h3>
-                        <span>{payment.amount > 0 ? `Vence: ${toDateInput(payment.dueDate)}` : 'Sin gastos en este mes'}</span>
-                      </div>
-                      <div className="charge-right">
-                        <strong>Día {payment.dueDate.getDate()}</strong>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          </aside>
-        </section>
-      </main>
-
-      {selectedPaymentEvent ? (
-        <div className="modal-backdrop" role="presentation" onClick={closePaymentDetailModal}>
-          <section className="modal-card modal-detail" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+      {isAuditModalOpen ? (
+        <div className="modal-backdrop" role="presentation" onClick={closeAuditModal}>
+          <section className="modal-card audit-modal-card" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <p className="eyebrow">Pagos del calendario</p>
-                <h2>Detalle de pago · {formatLongDate(selectedPaymentEvent.dateText)}</h2>
+                <p className="eyebrow">Auditoria</p>
+                <h2>Estado y conciliacion de tarjeta</h2>
               </div>
-              <button type="button" className="icon-button" onClick={closePaymentDetailModal} aria-label="Cerrar detalle de pago">
+              <button type="button" className="icon-button" onClick={closeAuditModal} aria-label="Cerrar auditoria">
                 <X size={16} />
               </button>
             </div>
 
-            <div className="detail-grid">
-              <article className="detail-card highlight">
-                <span>Total pendiente del día</span>
-                <strong>{money.format(selectedPaymentEvent.total)}</strong>
-              </article>
-              <article className="detail-card">
-                <span>Tarjetas con vencimiento</span>
-                <strong>{selectedPaymentEvent.cards.length}</strong>
-              </article>
-              <article className="detail-card">
-                <span>Compras relacionadas</span>
-                <strong>{selectedPaymentCards.reduce((sum, card) => sum + card.charges.length, 0)}</strong>
-              </article>
-            </div>
+            {cards.length === 0 ? (
+              <div className="empty-state compact">
+                <CreditCard size={28} />
+                <p>No hay tarjetas registradas para auditar.</p>
+              </div>
+            ) : (
+              <>
+                <div className="audit-toolbar">
+                  <label className="field wide">
+                    <span>Tarjeta a auditar</span>
+                    <select
+                      value={auditCardId}
+                      onChange={(event) => setAuditCardId(event.target.value)}
+                    >
+                      {cards.map((card) => (
+                        <option key={card.id} value={card.id}>
+                          {getCardDisplayName(card)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-            <div className="payment-detail-list">
-              {selectedPaymentCards.map((paymentCard) => (
-                <article key={paymentCard.id} className="payment-detail-card">
-                  <div className="detail-section-head">
-                    <div>
-                      <p className="movement-meta">{paymentCard.label}</p>
-                      <h3>{money.format(paymentCard.amount)}</h3>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={handleExportAuditPdf}
+                    disabled={!selectedAuditSummary || isExportingAudit}
+                  >
+                    <FileText size={16} />
+                    {isExportingAudit ? 'Exportando...' : 'Exportar PDF'}
+                  </button>
+                </div>
+
+                {selectedAuditSummary ? (
+                  <>
+                    <div className="audit-summary-grid">
+                      <article className="audit-summary-card">
+                        <span>Saldo actual</span>
+                        <strong>{money.format(selectedAuditSummary.currentBalance)}</strong>
+                      </article>
+                      <article className="audit-summary-card">
+                        <span>Deuda pendiente respaldada</span>
+                        <strong>{money.format(selectedAuditSummary.unpaidTotal)}</strong>
+                        <small>Compras: {money.format(selectedAuditSummary.pendingFromPurchases)} · Tasa cero: {money.format(selectedAuditSummary.pendingFromZeroRate)}</small>
+                      </article>
+                      <article className="audit-summary-card">
+                        <span>Cupo calculado</span>
+                        <strong>{money.format(selectedAuditSummary.calculatedLimit)}</strong>
+                      </article>
+                      <article className="audit-summary-card">
+                        <span>Saldo esperado</span>
+                        <strong>{money.format(selectedAuditSummary.expectedBalance)}</strong>
+                      </article>
+                      <article className={`audit-summary-card${selectedAuditSummary.isBalanced ? ' ok' : ' warning'}`}>
+                        <span>Conciliacion</span>
+                        <strong>{selectedAuditSummary.isBalanced ? 'Cuadra con saldo' : 'Revisar diferencia'}</strong>
+                        <small>Diferencia: {money.format(selectedAuditSummary.reconciliationGap)}</small>
+                        <small>
+                          Respaldo: {selectedAuditSummary.isPendingBacked ? 'Completo (Compra/Tasa cero)' : `Incompleto (${selectedAuditSummary.pendingWithoutSupportCount})`}
+                        </small>
+                      </article>
+                      <article className="audit-summary-card">
+                        <span>Movimientos</span>
+                        <strong>{selectedAuditSummary.charges.length}</strong>
+                        <small>Pagados: {selectedAuditSummary.paidCount} · Pendientes: {selectedAuditSummary.unpaidCount}</small>
+                      </article>
                     </div>
-                    <div className="detail-actions">
+
+                    <div className="section-head">
+                      <div>
+                        <p className="eyebrow">Detalle</p>
+                        <h3>Estado completo de la tarjeta</h3>
+                      </div>
                       <span className="section-badge">
-                        {paymentCard.paymentDay ? `Día ${paymentCard.paymentDay}` : 'Sin día'}
+                        Proximo vencimiento: {selectedAuditSummary.nextDueDateText ?? 'Sin pendientes'}
                       </span>
-                      <button
-                        type="button"
-                        className="primary-button"
-                        onClick={() => {
-                          void handlePayCardBalance(paymentCard.id, selectedPaymentEvent.dateText)
-                        }}
-                        disabled={paymentCard.amount <= 0 || activePayingCardId === paymentCard.id}
-                      >
-                        {activePayingCardId === paymentCard.id ? 'Pagando...' : 'Pagar tarjeta'}
-                      </button>
                     </div>
-                  </div>
 
-                  <div className="payment-balance-row">
-                    <article>
-                      <span>Saldo asignado</span>
-                      <strong>{money.format(paymentCard.assignedBalance)}</strong>
-                    </article>
-                    <article>
-                      <span>Deuda pendiente</span>
-                      <strong>{money.format(paymentCard.amount)}</strong>
-                    </article>
-                    <article>
-                      <span>Saldo - deuda</span>
-                      <strong>{money.format(paymentCard.netBalance)}</strong>
-                    </article>
-                  </div>
-
-                  {paymentCard.charges.length === 0 ? (
-                    <div className="empty-state compact">
-                      <p>Sin compras registradas para esta tarjeta.</p>
-                    </div>
-                  ) : (
                     <div className="table-wrap">
-                      <table className="cards-table" aria-label="Detalle de compras por tarjeta">
+                      <table className="cards-table" aria-label="Detalle de auditoria de tarjeta">
                         <thead>
                           <tr>
-                            <th>Concepto</th>
                             <th>Fecha</th>
+                            <th>Concepto</th>
+                            <th>Vence</th>
+                            <th>Respaldo</th>
+                            <th>Estado</th>
                             <th>Monto</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {paymentCard.charges.map((charge) => (
-                            <tr key={charge.id}>
-                              <td>{charge.concept}</td>
-                              <td>{charge.date}</td>
-                              <td>{money.format(charge.amount)}</td>
+                          {selectedAuditSummary.charges.length === 0 ? (
+                            <tr>
+                              <td colSpan={6}>Sin movimientos registrados para esta tarjeta.</td>
                             </tr>
-                          ))}
+                          ) : (
+                            selectedAuditSummary.charges.map((charge) => (
+                              <tr key={charge.id}>
+                                <td>{charge.date}</td>
+                                <td>{charge.concept}</td>
+                                <td>{charge.dueDateText}</td>
+                                <td>{charge.supportType}</td>
+                                <td>
+                                  <span className={`audit-status-pill ${charge.status === 'Pagado' ? 'paid' : 'pending'}`}>
+                                    {charge.status}
+                                  </span>
+                                </td>
+                                <td>{money.format(charge.amount)}</td>
+                              </tr>
+                            ))
+                          )}
                         </tbody>
                       </table>
                     </div>
-                  )}
-                </article>
-              ))}
-            </div>
+                  </>
+                ) : null}
+              </>
+            )}
           </section>
         </div>
       ) : null}

@@ -253,7 +253,7 @@
 }
 
 .stat-card {
-  min-height: 102px;
+  min-height: 80px;
   padding: 12px 14px;
   border-radius: 14px;
   border: 2px solid rgba(49, 53, 72, 0.76);
@@ -496,8 +496,9 @@
 
 .monthly-payment-item {
   border-radius: 14px;
-  border: 2px solid rgba(49, 53, 72, 0.68);
-  background: #f6f4fb;
+  border: 2px solid var(--card-pastel-border, rgba(49, 53, 72, 0.68));
+  background: var(--card-pastel-bg, #f6f4fb);
+  color: var(--card-pastel-ink, var(--ink));
   padding: 12px;
   display: flex;
   align-items: center;
@@ -822,45 +823,66 @@
   text-transform: uppercase;
 }
 
-.calendar-cutoff {
+.calendar-entry {
   padding: 5px 8px;
   border-radius: 10px;
   border: 1px solid rgba(49, 53, 72, 0.28);
-  background: rgba(49, 53, 72, 0.08);
   display: grid;
-  gap: 1px;
+  gap: 2px;
 }
 
-.calendar-cutoff strong {
+.calendar-cutoff {
+  background: rgba(49, 53, 72, 0.08);
+}
+
+.calendar-event {
+  margin-top: auto;
+  background: rgba(126, 92, 229, 0.14);
+  border-color: rgba(126, 92, 229, 0.34);
+  color: var(--ink);
+}
+
+.calendar-entry strong {
   font-size: 0.72rem;
   line-height: 1.1;
 }
 
-.calendar-cutoff small {
+.calendar-entry small {
   color: var(--muted);
   font-size: 0.68rem;
   line-height: 1.1;
 }
 
-.calendar-event {
-  margin-top: auto;
-  padding: 6px 8px;
-  background: rgba(126, 92, 229, 0.14);
-  color: var(--ink);
+.calendar-card-tags {
   display: grid;
-  gap: 2px;
+  gap: 4px;
+  margin-top: 2px;
 }
 
-.calendar-event-button {
+.calendar-card-tag {
+  padding: 3px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--card-pastel-border, rgba(49, 53, 72, 0.32));
+  background: var(--card-pastel-bg, rgba(246, 245, 250, 0.96));
+  color: var(--card-pastel-ink, var(--ink));
+  font-size: 0.66rem;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.calendar-entry-button {
   width: 100%;
   border: 0;
+  padding: 5px 8px;
   font: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.calendar-event-button:hover {
-  background: rgba(126, 92, 229, 0.2);
+.calendar-entry-button:hover {
+  filter: brightness(0.98);
 }
 
 .calendar-event strong {
@@ -1064,8 +1086,9 @@
 
 .payment-detail-card {
   border-radius: 16px;
-  border: 1px solid rgba(15, 23, 42, 0.14);
-  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--card-pastel-border, rgba(15, 23, 42, 0.14));
+  background: var(--card-pastel-bg, rgba(255, 255, 255, 0.92));
+  color: var(--card-pastel-ink, var(--ink));
   padding: 12px;
   display: grid;
   gap: 10px;
@@ -1276,7 +1299,6 @@
 :root[data-theme='dark'] .field select,
 :root[data-theme='dark'] .quick-search-input,
 :root[data-theme='dark'] .calendar-cell,
-:root[data-theme='dark'] .monthly-payment-item,
 :root[data-theme='dark'] .card-item,
 :root[data-theme='dark'] .charge-item,
 :root[data-theme='dark'] .agenda-item,
@@ -1321,11 +1343,18 @@
 
 :root[data-theme='dark'] .calendar-event {
   background: rgba(122, 162, 255, 0.2);
+  border-color: rgba(122, 162, 255, 0.44);
 }
 
 :root[data-theme='dark'] .calendar-cutoff {
   border-color: rgba(143, 152, 188, 0.4);
   background: rgba(143, 152, 188, 0.14);
+}
+
+:root[data-theme='dark'] .calendar-card-tag {
+  border-color: var(--card-pastel-border-dark, rgba(143, 152, 188, 0.4));
+  background: var(--card-pastel-bg-dark, rgba(143, 152, 188, 0.2));
+  color: var(--card-pastel-ink-dark, #e7edff);
 }
 
 :root[data-theme='dark'] .calendar-today-pill {
@@ -1334,16 +1363,27 @@
   color: #d5e2ff;
 }
 
-:root[data-theme='dark'] .calendar-event-button:hover {
+:root[data-theme='dark'] .calendar-entry-button:hover {
   background: rgba(122, 162, 255, 0.28);
+}
+
+:root[data-theme='dark'] .monthly-payment-item {
+  border-color: var(--card-pastel-border-dark, rgba(143, 152, 188, 0.55));
+  background: var(--card-pastel-bg-dark, #242e48);
+  color: var(--card-pastel-ink-dark, var(--ink));
 }
 
 :root[data-theme='dark'] .table-wrap,
 :root[data-theme='dark'] .detail-card,
-:root[data-theme='dark'] .payment-detail-card,
 :root[data-theme='dark'] .detail-charge-item {
   border-color: rgba(143, 152, 188, 0.38);
   background: #212c45;
+}
+
+:root[data-theme='dark'] .payment-detail-card {
+  border-color: var(--card-pastel-border-dark, rgba(143, 152, 188, 0.38));
+  background: var(--card-pastel-bg-dark, #212c45);
+  color: var(--card-pastel-ink-dark, var(--ink));
 }
 
 :root[data-theme='dark'] .payment-balance-row article {
