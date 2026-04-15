@@ -1203,6 +1203,89 @@
   margin-top: 4px;
 }
 
+.audit-modal-card {
+  width: min(980px, 100%);
+}
+
+.audit-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.audit-toolbar .field {
+  margin: 0;
+  flex: 1;
+}
+
+.audit-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.audit-summary-card {
+  border-radius: 12px;
+  border: 1px solid rgba(49, 53, 72, 0.24);
+  background: #f2eef9;
+  padding: 10px;
+}
+
+.audit-summary-card span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.audit-summary-card strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 1.05rem;
+}
+
+.audit-summary-card small {
+  display: block;
+  margin-top: 6px;
+  color: var(--muted);
+  font-size: 0.74rem;
+}
+
+.audit-summary-card.ok {
+  border-color: rgba(32, 142, 96, 0.38);
+  background: #e8f6ef;
+}
+
+.audit-summary-card.warning {
+  border-color: rgba(184, 104, 48, 0.4);
+  background: #fff0df;
+}
+
+.audit-status-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(49, 53, 72, 0.34);
+  background: #eceaf4;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.audit-status-pill.paid {
+  border-color: rgba(34, 135, 99, 0.42);
+  background: #e6f4ee;
+  color: #1d5d45;
+}
+
+.audit-status-pill.pending {
+  border-color: rgba(180, 107, 43, 0.4);
+  background: #fceddc;
+  color: #6d3f13;
+}
+
 .manage-cards-list {
   display: grid;
   gap: 10px;
@@ -1302,7 +1385,8 @@
 :root[data-theme='dark'] .card-item,
 :root[data-theme='dark'] .charge-item,
 :root[data-theme='dark'] .agenda-item,
-:root[data-theme='dark'] .manage-card-item {
+:root[data-theme='dark'] .manage-card-item,
+:root[data-theme='dark'] .audit-summary-card {
   border-color: rgba(143, 152, 188, 0.55);
   background: #242e48;
   color: var(--ink);
@@ -1389,6 +1473,34 @@
 :root[data-theme='dark'] .payment-balance-row article {
   border-color: rgba(143, 152, 188, 0.34);
   background: rgba(122, 162, 255, 0.14);
+}
+
+:root[data-theme='dark'] .audit-summary-card.ok {
+  border-color: rgba(109, 204, 164, 0.45);
+  background: rgba(37, 97, 75, 0.44);
+}
+
+:root[data-theme='dark'] .audit-summary-card.warning {
+  border-color: rgba(243, 188, 125, 0.48);
+  background: rgba(109, 78, 43, 0.42);
+}
+
+:root[data-theme='dark'] .audit-status-pill {
+  border-color: rgba(143, 152, 188, 0.5);
+  background: rgba(143, 152, 188, 0.2);
+  color: var(--ink);
+}
+
+:root[data-theme='dark'] .audit-status-pill.paid {
+  border-color: rgba(109, 204, 164, 0.52);
+  background: rgba(52, 112, 89, 0.46);
+  color: #cff7e5;
+}
+
+:root[data-theme='dark'] .audit-status-pill.pending {
+  border-color: rgba(243, 188, 125, 0.56);
+  background: rgba(115, 83, 45, 0.46);
+  color: #ffe8cd;
 }
 
 :root[data-theme='dark'] .detail-card.highlight {
@@ -1503,6 +1615,10 @@
   .monthly-payments-list {
     max-height: 320px;
   }
+
+  .audit-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 640px) {
@@ -1587,5 +1703,18 @@
 
   .monthly-payments-list {
     max-height: 280px;
+  }
+
+  .audit-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .audit-toolbar .primary-button {
+    width: 100%;
+  }
+
+  .audit-summary-grid {
+    grid-template-columns: 1fr;
   }
 }
